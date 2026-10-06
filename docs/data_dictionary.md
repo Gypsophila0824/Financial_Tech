@@ -16,7 +16,7 @@
 |security_type|enum|是|目前只允許 `COMMON_STOCK`|
 |listing_date|date|否|上市／上櫃日期|
 |is_eligible|boolean|是|正式候選池必為 `true`|
-|max_weight|decimal|條件式|0 < 值 <= 1；競賽規則未確認時留空並阻擋正式產出|
+|max_weight|decimal|是（正式檔）|2330 為 `0.25`，其餘個股為 `0.10`；示範檔可留空但不得用於正式產出|
 |source|string|是|主辦方或官方資料來源識別|
 |source_reference|string|否|來源檔名、URL或文件識別|
 |source_as_of_date|date|是|來源資料基準日|

@@ -67,7 +67,7 @@ def validate_security_master(rows: list[dict[str, str]], profile: str = "example
             issues.append(Issue("error", "updated_at", f"row {number}: timezone-aware ISO datetime required"))
         if _blank(row["max_weight"]):
             severity = "error" if profile == "production" else "warning"
-            issues.append(Issue(severity, "weight_rule_pending", f"row {number}: max_weight awaits competition rule"))
+            issues.append(Issue(severity, "weight_rule_pending", f"row {number}: max_weight is required for a competition-compliant universe"))
         else:
             try:
                 weight = float(row["max_weight"])

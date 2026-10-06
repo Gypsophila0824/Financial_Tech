@@ -5,9 +5,12 @@
 ## 快速開始
 
 ```powershell
-$env:PYTHONPATH = "src"
+py -3.11 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -e .
 python -m unittest discover -s tests -v
-python -m tw_stock_agent.cli validate --table security_master --input data/examples/security_master.csv --profile example
+tw-stock-agent validate --table security_master --input data/examples/security_master.csv --profile example
 ```
 
-正式名單建置請參閱 `docs/universe_runbook.md`。沒有主辦方名單、官方來源檔與單檔權重規則時，工具會保留待確認狀態，不會把示範資料當成正式150檔。
+正式名單建置請參閱 `docs/universe_runbook.md`。沒有主辦方名單與官方來源檔時，工具會保留待確認狀態，不會把示範資料當成正式150檔。

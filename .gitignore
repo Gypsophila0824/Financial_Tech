@@ -1,0 +1,22 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+
+# Python environments and generated files
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+
+# Private, reproducible, or potentially licensed data
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+*.parquet
+
+# Local scratch output
+tmp/
+*.log

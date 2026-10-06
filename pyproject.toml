@@ -1,5 +1,26 @@
+# Python 專案的基本設定；可安全提交至 GitHub。
 [project]
+# 套件名稱，供 Python 工具與未來發布流程識別。
 name = "tw-stock-agent"
+# 專案版本；功能穩定或發布時再調整。
 version = "0.1.0"
+# 簡短描述專案用途。
 description = "Data contracts and fixed-universe tooling for a Taiwan equity decision agent"
+# 團隊執行本專案所需的最低 Python 版本。
 requires-python = ">=3.11"
+
+# Installable local command after `pip install -e .`.
+[project.scripts]
+tw-stock-agent = "tw_stock_agent.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# 未來若需要額外 Python 套件，可加入例如：
+# dependencies = [
+#   "requests>=2.0",
+# ]
