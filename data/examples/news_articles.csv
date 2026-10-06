@@ -1,0 +1,6 @@
+article_id,published_at,ticker,title,content,source,url,match_confidence,dedup_hash,retrieved_at
+example-news-001,2026-09-30T18:30:00+08:00,2330,假資料新聞標題,假資料新聞內文,MOCK_NOT_OFFICIAL,https://example.invalid/news-001,0.98,examplehash001,2026-10-01T07:10:00+08:00
+example-news-002,2026-09-30T18:40:00+08:00,2317,假資料新聞標題,假資料新聞內文,MOCK_NOT_OFFICIAL,https://example.invalid/news-002,0.95,examplehash002,2026-10-01T07:10:00+08:00
+example-news-003,2026-09-30T19:00:00+08:00,2454,假資料新聞標題,假資料新聞內文,MOCK_NOT_OFFICIAL,https://example.invalid/news-003,0.90,examplehash003,2026-10-01T07:10:00+08:00
+example-news-004,2026-09-30T19:10:00+08:00,5274,假資料新聞標題,假資料新聞內文,MOCK_NOT_OFFICIAL,https://example.invalid/news-004,0.88,examplehash004,2026-10-01T07:10:00+08:00
+example-news-005,2026-09-30T19:20:00+08:00,6488,假資料新聞標題,假資料新聞內文,MOCK_NOT_OFFICIAL,https://example.invalid/news-005,0.87,examplehash005,2026-10-01T07:10:00+08:00

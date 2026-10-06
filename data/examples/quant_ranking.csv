@@ -1,0 +1,6 @@
+as_of_date,ticker,quant_score,quant_rank,selected,reason,model_version
+2026-09-30,2330,0.873,1,true,假資料：20日動能與相對強度偏高,quant-v1-example
+2026-09-30,2317,0.801,2,true,假資料：相對強度偏高,quant-v1-example
+2026-09-30,2454,0.752,3,true,假資料：量能放大,quant-v1-example
+2026-09-30,5274,0.701,4,true,假資料：趨勢正向,quant-v1-example
+2026-09-30,6488,0.611,5,true,假資料：成交活絡,quant-v1-example

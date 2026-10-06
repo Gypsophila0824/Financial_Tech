@@ -1,0 +1,6 @@
+universe_id,cutoff_date,ticker,name,market,industry,closing_price,shares_outstanding,market_cap,market_cap_rank,security_type,listing_date,market_cap_method,max_weight,weight_rule_reference,source,source_reference,retrieved_at
+example-not-official-2026-07-31,2026-07-31,2330,範例半導體,TWSE,半導體業,1000,25932930380,25932930380000,1,COMMON_STOCK,1994-09-05,CLOSE_X_COMMON_SHARES,,,MOCK_NOT_OFFICIAL,example-fixture,2026-10-06T09:00:00+08:00
+example-not-official-2026-07-31,2026-07-31,2317,範例電子,TWSE,其他電子業,200,13862990680,2772598136000,2,COMMON_STOCK,1991-06-18,CLOSE_X_COMMON_SHARES,,,MOCK_NOT_OFFICIAL,example-fixture,2026-10-06T09:00:00+08:00
+example-not-official-2026-07-31,2026-07-31,2454,範例IC設計,TWSE,半導體業,500,1000000000,500000000000,3,COMMON_STOCK,1998-08-24,CLOSE_X_COMMON_SHARES,,,MOCK_NOT_OFFICIAL,example-fixture,2026-10-06T09:00:00+08:00
+example-not-official-2026-07-31,2026-07-31,5274,範例上櫃半導體,TPEX,半導體業,,,120000000000,1,COMMON_STOCK,2014-04-01,OFFICIAL_MARKET_CAP_REPORT,,,MOCK_NOT_OFFICIAL,example-fixture,2026-10-06T09:00:00+08:00
+example-not-official-2026-07-31,2026-07-31,6488,範例上櫃電子,TPEX,其他電子業,,,60000000000,2,COMMON_STOCK,2015-08-27,OFFICIAL_MARKET_CAP_REPORT,,,MOCK_NOT_OFFICIAL,example-fixture,2026-10-06T09:00:00+08:00

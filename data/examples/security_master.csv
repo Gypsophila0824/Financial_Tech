@@ -1,0 +1,6 @@
+universe_id,ticker,name,market,industry,security_type,listing_date,is_eligible,max_weight,source,source_reference,source_as_of_date,updated_at
+example-not-official-2026-07-31,2330,範例半導體,TWSE,半導體業,COMMON_STOCK,1994-09-05,true,,MOCK_NOT_OFFICIAL,example-fixture,2026-07-31,2026-10-06T09:00:00+08:00
+example-not-official-2026-07-31,2317,範例電子,TWSE,其他電子業,COMMON_STOCK,1991-06-18,true,,MOCK_NOT_OFFICIAL,example-fixture,2026-07-31,2026-10-06T09:00:00+08:00
+example-not-official-2026-07-31,2454,範例IC設計,TWSE,半導體業,COMMON_STOCK,1998-08-24,true,,MOCK_NOT_OFFICIAL,example-fixture,2026-07-31,2026-10-06T09:00:00+08:00
+example-not-official-2026-07-31,5274,範例上櫃半導體,TPEX,半導體業,COMMON_STOCK,2014-04-01,true,,MOCK_NOT_OFFICIAL,example-fixture,2026-07-31,2026-10-06T09:00:00+08:00
+example-not-official-2026-07-31,6488,範例上櫃電子,TPEX,其他電子業,COMMON_STOCK,2015-08-27,true,,MOCK_NOT_OFFICIAL,example-fixture,2026-07-31,2026-10-06T09:00:00+08:00

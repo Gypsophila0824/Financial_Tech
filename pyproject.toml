@@ -1,0 +1,5 @@
+[project]
+name = "tw-stock-agent"
+version = "0.1.0"
+description = "Data contracts and fixed-universe tooling for a Taiwan equity decision agent"
+requires-python = ">=3.11"

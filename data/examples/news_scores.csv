@@ -1,0 +1,6 @@
+as_of_date,ticker,article_count,news_score,event_score,confidence,has_news,reason,model_version
+2026-09-30,2330,2,0.72,0.85,0.91,true,假資料：消息偏正面,news-v1-example
+2026-09-30,2317,1,0.10,0.20,0.80,true,假資料：消息中性略正面,news-v1-example
+2026-09-30,2454,1,-0.20,0.30,0.75,true,假資料：消息略負面,news-v1-example
+2026-09-30,5274,1,0.00,0.00,0.70,true,假資料：中性新聞,news-v1-example
+2026-09-30,6488,0,0.00,0.00,1.00,false,假資料：沒有有效新聞,news-v1-example
