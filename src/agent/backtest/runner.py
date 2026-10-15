@@ -1,0 +1,434 @@
+"""正式策略的 point-in-time 歷史回測入口。
+
+重用 factor_engine 的正式評分、選股、配權與下單規則；本模組只模擬歷史
+成交與帳本，絕不產生 D-Plan、訂單提交檔或修改正式 ledger.json。
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import math
+from io import StringIO
+from dataclasses import asdict, dataclass, field
+from datetime import datetime
+from pathlib import Path
+from uuid import uuid4
+
+import pandas as pd
+
+from .. import rules
+from ..factor_engine import build_targets, check_active_share, plan_trades
+from ..governance import production_manifest
+from ..inputs import StoreInputs
+from ..state import PortfolioState, settle, trade_fee, trade_tax
+from ..tools.trading_calendar import trading_days
+from . import archive
+from .corporate_actions import CorporateAction, DividendLedger, load_actions, validate_actions
+from .risk import (RiskState, active_share_status, add_warning, buy_overweight_reasons,
+                   invalid_reasons, passive_grace_reasons)
+
+
+ROOT = Path(__file__).resolve().parents[3]
+
+
+@dataclass
+class BacktestResult:
+    """一次正式回測的記錄；各表可直接寫為稽核輸出。"""
+
+    daily_nav: pd.DataFrame
+    holdings: pd.DataFrame
+    trades: pd.DataFrame
+    compliance: pd.DataFrame
+    factor_diagnostics: pd.DataFrame
+    summary: dict
+    skipped_dates: list[dict] = field(default_factory=list)
+    dividend_ledger: dict = field(default_factory=dict)
+    artifacts: dict[str, bytes] = field(default_factory=dict, repr=False)
+
+
+def _dates(inputs, start: str | None, end: str | None, days: int | None) -> list[str]:
+    dates = list(inputs.dates() if hasattr(inputs, "dates") else inputs.days)
+    # trade_date 需要前一個交易日作為資料日，因此第一日不可能執行。
+    dates = dates[1:]
+    if start:
+        dates = [d for d in dates if d >= start]
+    if end:
+        dates = [d for d in dates if d <= end]
+    if days is not None:
+        dates = dates[:days]
+    if not dates:
+        raise ValueError("指定區間沒有可回測的交易日")
+    return dates
+
+
+def _weights(state: PortfolioState) -> pd.Series:
+    if not state.holdings or not state.nav:
+        return pd.Series(dtype=float)
+    return pd.Series({t: shares * state.last_close[t] / state.nav for t, shares in state.holdings.items()})
+
+
+def _summary(daily: pd.DataFrame, skipped_dates: list[dict]) -> dict:
+    if daily.empty:
+        return {"records": 0, "skipped_dates": skipped_dates}
+    returns = daily["daily_return"].dropna()
+    nav = daily["nav"]
+    benchmark = daily["benchmark_nav"]
+    drawdown = daily["drawdown"]
+    vol = returns.std(ddof=0) * (252 ** 0.5) if len(returns) > 1 else None
+    initial_nav = float(daily['prior_nav'].iloc[0]) if 'prior_nav' in daily else float(rules.INITIAL_CAPITAL)
+    annualized = (float(nav.iloc[-1]) / initial_nav) ** (252 / len(daily)) - 1 if nav.iloc[-1] > 0 else None
+    sharpe = (returns.mean() / returns.std(ddof=0) * (252 ** 0.5)
+              if len(returns) > 1 and returns.std(ddof=0) > 0 else None)
+    return {
+        "records": int(len(daily)),
+        "start_date": str(daily["date"].iloc[0]),
+        "end_date": str(daily["date"].iloc[-1]),
+        "initial_nav": initial_nav,
+        "final_nav": float(nav.iloc[-1]),
+        "cumulative_return": float(nav.iloc[-1] / initial_nav - 1),
+        "annualized_return": None if annualized is None else float(annualized),
+        "annualization_periods": int(len(daily)),
+        "short_sample_warning": len(daily) < 252,
+        "annualized_volatility": None if vol is None else float(vol),
+        "sharpe_zero_risk_free": None if sharpe is None else float(sharpe),
+        "max_drawdown": float(drawdown.min()),
+        "total_turnover": float(daily["turnover"].sum()),
+        "total_cost": float(daily["cost"].sum()),
+        "benchmark_cumulative_return": float(benchmark.iloc[-1] - 1),
+        "excess_return": float(nav.iloc[-1] / rules.INITIAL_CAPITAL - benchmark.iloc[-1]),
+        "min_active_share": None if daily["min_active_share"].dropna().empty else float(daily["min_active_share"].min()),
+        "active_share_breach_days": int((daily["min_active_share"] < rules.ACTIVE_SHARE_MIN).sum()),
+        "skipped_dates": skipped_dates,
+        "benchmark_definition": "150 檔可得收盤價之等權、每日再平衡價格報酬；未含股利，非總報酬基準。",
+    }
+
+
+def run_formal_backtest(
+    inputs,
+    *,
+    start: str | None = None,
+    end: str | None = None,
+    days: int | None = None,
+    corporate_actions: list[CorporateAction] | None = None,
+    terminal_date: str | None = None,
+    known_exrights: set[tuple[str, str]] | None = None,
+) -> BacktestResult:
+    """以當時可用資料重播正式策略，回傳完整稽核資料但不寫檔。
+
+    ``inputs`` 通常是 ``StoreInputs(history=True, strict_history=True)``。strict
+    模式在 ETF 持股快照尚未存在時會略過該日，避免把未來 ETF 資料帶回歷史。
+    """
+    if isinstance(inputs, StoreInputs) and not (inputs.history and inputs.strict_history):
+        raise ValueError('正式回測必須使用 history=True, strict_history=True')
+    actions = list(corporate_actions or [])
+    validate_actions(actions)
+    artifacts, source_hashes = archive.capture_sources(isinstance(inputs, StoreInputs))
+    planned_dates = _dates(inputs, start, end, days)
+    for action in actions:
+        if planned_dates[0] <= action.ex_date <= planned_dates[-1] and action.ex_date not in planned_dates:
+            raise ValueError(f'{action.event_id} 生效日沒有對應交易資料，請核實實際除權息日')
+    if terminal_date is not None and terminal_date != planned_dates[-1]:
+        raise ValueError('terminal_date 必須等於本次回測最後交易日；不得提前釋放權益')
+    known_exrights = set(known_exrights or set())
+    if isinstance(inputs, StoreInputs):
+        ex_path = ROOT / 'data/market/twse_exright.csv'
+        if ex_path.exists():
+            all_dates = inputs.dates()
+            for r in pd.read_csv(ex_path, dtype={'ticker': str}).itertuples():
+                effective = next((d for d in all_dates if d >= r.date), None)
+                if effective:
+                    known_exrights.add((effective, r.ticker))
+        # 上櫃次日參考價若與收盤不同，必須有核實事件，不能當成一般報酬。
+        daily = inputs.daily
+        if 'ref_next' in daily:
+            for r in daily[daily['market'] == 'TPEX'].itertuples():
+                ref = pd.to_numeric(r.ref_next, errors='coerce')
+                if pd.notna(ref) and pd.notna(r.close) and abs(ref - r.close) > 1e-6:
+                    later = next((d for d in inputs.dates() if d > r.date), None)
+                    if later:
+                        known_exrights.add((later, r.ticker))
+    dividend_book = DividendLedger()
+    archived_days = []
+    state = PortfolioState.initial()
+    daily_rows, holding_rows, trade_rows, compliance_rows, factor_rows = [], [], [], [], []
+    skipped_dates: list[dict] = []
+    benchmark_nav = 1.0
+    peak_nav = state.nav
+    risk = RiskState()
+
+    for trade_date in planned_dates:
+        if risk.disqualified:
+            break
+        try:
+            day = inputs.day(trade_date)
+        except FileNotFoundError as exc:
+            if daily_rows:
+                raise ValueError(f'{trade_date} 回測途中缺資料，停止以避免跳日與漏記股利') from exc
+            skipped_dates.append({"trade_date": trade_date, "reason": str(exc)})
+            continue
+        if daily_rows and (day.data_date != state.as_of or len(trading_days(state.as_of, trade_date)) != 2):
+            raise ValueError(f'{trade_date} 交易日不連續；帳本 {state.as_of}、資料日 {day.data_date}')
+
+        dividend_book.accrue(trade_date, state.holdings, actions, known_exrights)
+
+        # 正式邏輯：新聞歷史快照尚未建置時保持中性，與既有 replay 定義一致。
+        targets = build_targets(day.master, day.pv, day.fund, None, state.held_tickers(), day.benches)
+        trade_plan = plan_trades(
+            targets.picks, state.holdings, pd_to_decimal(state.cash), pd_to_decimal(state.nav),
+            day.close, day.tradable, day.benches, day.data_date,
+        )
+        fill_prices = inputs.fill_prices(trade_date)
+        missing_fill = sorted({d["ticker"] for d in trade_plan.decisions} - set(fill_prices))
+        if missing_fill:
+            raise ValueError(f"{trade_date} 缺少成交均價：{missing_fill}；回測停止，不使用收盤價替代")
+        close_prices = inputs.close_prices(trade_date)
+        prev_nav = state.nav
+        prev_close = inputs.close_prices(day.data_date)
+        exposed = set(state.holdings) | {d['ticker'] for d in trade_plan.decisions}
+        invalid_close = [t for t in exposed if t not in close_prices or
+                         not math.isfinite(close_prices[t]) or close_prices[t] <= 0]
+        if invalid_close:
+            raise ValueError(f'{trade_date} 缺少當日有效收盤價：{sorted(invalid_close)}；不得沿用舊價')
+        archived_days.append(archive.capture_day(day, fill_prices, close_prices, prev_close))
+
+        buy = sell = cost = 0.0
+        pending_trade_rows = []
+        for decision in trade_plan.decisions:
+            ticker, shares, side = decision["ticker"], decision["shares"], decision["side"]
+            price = float(fill_prices[ticker])
+            amount = shares * price
+            fee = trade_fee(amount)
+            tax = trade_tax(amount) if side == "SELL" else 0.0
+            buy += amount if side == "BUY" else 0.0
+            sell += amount if side == "SELL" else 0.0
+            cost += fee + tax
+            pending_trade_rows.append({
+                "date": trade_date, "ticker": ticker, "action": decision["action"], "side": side,
+                "shares": shares, "fill_price": price, "amount": amount, "fee": fee, "tax": tax,
+                "target_weight": decision["target_weight"], "data_date": day.data_date,
+            })
+
+        orders = [
+            type("Order", (), {"ticker": d["ticker"], "side": d["side"], "shares": d["shares"]})()
+            for d in trade_plan.decisions
+        ]
+        # 合成測試資料不冒充官方 30 檔 ETF；封存重播仍須完整追蹤。
+        track_active_share = (not getattr(inputs, "is_mock", False)
+                              or (isinstance(inputs, archive.ArchivedInputs)
+                                  and inputs.payload.get("active_share_trackable", True)))
+        etf_dates = day.etf_dates or {code: day.etf_date for code in day.benches}
+        risk_benches = day.benches if track_active_share else None
+        risk_etf_dates = etf_dates if track_active_share else None
+        # 委託當下以前日收盤價可預見的加碼超限，不適用價格波動寬限。
+        projected = settle(state, trade_date, orders, prev_close, prev_close)
+        bought = {order.ticker for order in orders if order.side == "BUY"}
+        candidate = settle(state, trade_date, orders, fill_prices, close_prices,
+                            benchmarks=risk_benches, etf_dates=risk_etf_dates)
+        reasons = (invalid_reasons(candidate, set(day.master.index))
+                   + buy_overweight_reasons(projected, bought)
+                   + passive_grace_reasons(candidate))
+        invalidated = bool(reasons)
+        if invalidated:
+            # 六(十四)：交易無效，使用前一日持倉，僅按本日收盤重新估值。
+            state = settle(state, trade_date, [], {}, close_prices,
+                           benchmarks=risk_benches, etf_dates=risk_etf_dates)
+            # 無效後的舊組合仍可能在當日第六日被動超限，合併為同一警告。
+            reasons += invalid_reasons(state, set(day.master.index)) + passive_grace_reasons(state)
+            buy = sell = cost = 0.0
+        else:
+            state = candidate
+            trade_rows.extend(pending_trade_rows)
+        add_warning(risk, trade_date, reasons)
+        weights = _weights(state)
+        as_report = check_active_share(weights, day.benches)
+        min_as = float(as_report["active_share"].min()) if not as_report.empty else None
+        max_weight = float(weights.max()) if not weights.empty else 0.0
+        max_other = float(weights.drop(index=rules.TSMC, errors="ignore").max()) if len(weights) else 0.0
+        benchmark_returns = pd.Series(close_prices, dtype=float).div(pd.Series(prev_close, dtype=float)).sub(1).dropna()
+        benchmark_return = float(benchmark_returns.mean()) if not benchmark_returns.empty else 0.0
+        benchmark_nav *= 1 + benchmark_return
+        daily_return = state.nav / prev_nav - 1
+        peak_nav = max(peak_nav, state.nav)
+        drawdown = state.nav / peak_nav - 1
+        hard_ok = (not invalidated and rules.MIN_HOLDINGS <= len(state.holdings) <= rules.MAX_HOLDINGS
+                   and 0 <= state.cash / state.nav <= rules.CASH_MAX
+                   and max_weight <= rules.MAX_WEIGHT_TSMC + 1e-12
+                   and max_other <= rules.MAX_WEIGHT_OTHER + 1e-12)
+        as_status = active_share_status(state, trade_date)
+        daily_rows.append({
+            "date": trade_date, "data_date": day.data_date, "nav": state.nav, "cash": state.cash,
+            "prior_nav": prev_nav, "trading_nav": state.nav, "terminal_dividend_adjustment": 0.0,
+            "deferred_cash_dividends": float(dividend_book.cash),
+            "deferred_stock_shares": float(sum(dividend_book.stocks.values())),
+            "cash_pct": state.cash / state.nav, "n_holdings": len(state.holdings), "daily_return": daily_return,
+            "drawdown": drawdown, "turnover": (buy + sell) / prev_nav, "cost": cost,
+            "benchmark_return": benchmark_return, "benchmark_nav": benchmark_nav,
+            "min_active_share": min_as, "max_weight": max_weight, "max_other_weight": max_other,
+            "settlement_status": "invalidated" if invalidated else "executed",
+            "warning_number": risk.warning_count if reasons else 0,
+            "warning_reasons": "|".join(sorted(set(reasons))),
+            "active_share_confirmed_two_day_risk": bool(as_status["confirmed_two_day_etfs"]),
+            "active_share_estimated_two_day_risk": bool(as_status["estimated_two_day_etfs"]),
+        })
+        compliance_rows.append({
+            "date": trade_date, "holdings_ok": rules.MIN_HOLDINGS <= len(state.holdings) <= rules.MAX_HOLDINGS,
+            "cash_ok": 0 <= state.cash / state.nav <= rules.CASH_MAX,
+            "weight_ok": max_weight <= rules.MAX_WEIGHT_TSMC + 1e-12 and max_other <= rules.MAX_WEIGHT_OTHER + 1e-12,
+            "active_share_ok": min_as is None or min_as >= rules.ACTIVE_SHARE_MIN,
+            "overall_hard_limits_ok": hard_ok, "min_active_share": min_as,
+            "active_share_warning": min_as is not None and min_as < rules.ACTIVE_SHARE_MIN,
+            "settlement_status": "invalidated" if invalidated else "executed",
+            "transaction_invalidated": invalidated,
+            "warning_number": risk.warning_count if reasons else 0,
+            "warning_reasons": "|".join(sorted(set(reasons))),
+            "passive_overweight_days": json.dumps(state.overweight_days, ensure_ascii=False, sort_keys=True),
+            "active_share_confirmed_two_day_etfs": "|".join(as_status["confirmed_two_day_etfs"]),
+            "active_share_estimated_two_day_etfs": "|".join(as_status["estimated_two_day_etfs"]),
+        })
+        for ticker, shares in state.holdings.items():
+            holding_rows.append({"date": trade_date, "ticker": ticker, "shares": shares,
+                                 "close": state.last_close[ticker], "market_value": shares * state.last_close[ticker],
+                                 "weight": weights[ticker]})
+        diag = targets.scored.reset_index(names="ticker").copy()
+        diag.insert(0, "date", trade_date)
+        diag["selected"] = diag["ticker"].isin(targets.picks.index)
+        diag["target_weight"] = diag["ticker"].map(targets.picks["weight"]).fillna(0.0)
+        factor_rows.append(diag)
+
+    if not daily_rows:
+        raise ValueError('沒有有效回測交易日，不能產出成功報告')
+    if terminal_date:
+        if daily_rows[-1]['date'] != terminal_date:
+            raise ValueError('期末日未成功回測，不得結算股利')
+        terminal = dividend_book.finalize(terminal_date, inputs.close_prices(terminal_date))
+        adjustment = float(terminal['nav_adjustment'])
+        last = daily_rows[-1]
+        last['terminal_dividend_adjustment'] = adjustment
+        last['nav'] += adjustment
+        last['daily_return'] = last['nav'] / last['prior_nav'] - 1
+        last['drawdown'] = last['nav'] / max(peak_nav, last['nav']) - 1
+    daily = pd.DataFrame(daily_rows)
+    if not daily.empty:
+        daily["cumulative_return"] = daily["nav"] / rules.INITIAL_CAPITAL - 1
+    summary = _summary(daily, skipped_dates)
+    summary.update({'dividend_policy': 'contest_deferred_dividends_v1', 'terminal_date': terminal_date,
+                    'dividend_data_coverage': 'user_supplied_events_not_certified_complete',
+                    'terminal_nav_includes_dividends': terminal_date is not None,
+                    'daily_risk_basis': 'trading_nav；期末股利調整不回寫可交易現金與風控分母',
+                    'source_warning': '公司事件明細需人工核對完整性；分割等未支持事件遇曝險時停止',
+                    'daily_warning_count': risk.warning_count, 'daily_warning_days': risk.warning_days,
+                    'disqualified_after_three_warnings': risk.disqualified,
+                    'disqualification_reason': risk.disqualification_reason,
+                    'active_share_rule_note': '連續風險僅以本地收盤與ETF披露資料估計；非主辦方裁定，未自動宣告取消資格'})
+    artifacts['replay_inputs.json'] = archive.json_bytes({'days': archived_days,
+        'active_share_trackable': not getattr(inputs, 'is_mock', False),
+        'corporate_actions': [asdict(a) for a in actions], 'terminal_date': terminal_date,
+        'known_exrights': sorted(known_exrights), 'strategy_manifest': production_manifest()})
+    archive.check_unchanged(source_hashes)
+    return BacktestResult(daily, pd.DataFrame(holding_rows), pd.DataFrame(trade_rows),
+                          pd.DataFrame(compliance_rows),
+                          pd.concat(factor_rows, ignore_index=True) if factor_rows else pd.DataFrame(),
+                          summary, skipped_dates, dividend_book.snapshot(), artifacts)
+
+
+def pd_to_decimal(value: float):
+    """延後匯入 Decimal，讓回測邏輯與正式 plan_trades 的型別契約一致。"""
+    from decimal import Decimal
+    return Decimal(str(value))
+
+
+def write_result(result: BacktestResult, out_dir: Path, *, config: dict) -> None:
+    """寫出獨立 run 的所有稽核檔；不得傳入 output/live。"""
+    out_dir = archive.safe_output(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=False)
+    result.daily_nav.to_csv(out_dir / "daily_nav.csv", index=False, encoding="utf-8-sig")
+    result.holdings.to_csv(out_dir / "holdings.csv", index=False, encoding="utf-8-sig")
+    result.trades.to_csv(out_dir / "trades.csv", index=False, encoding="utf-8-sig")
+    result.compliance.to_csv(out_dir / "compliance.csv", index=False, encoding="utf-8-sig")
+    result.factor_diagnostics.to_csv(out_dir / "factor_diagnostics.csv", index=False, encoding="utf-8-sig")
+    (out_dir / "summary.json").write_text(json.dumps(result.summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    (out_dir / 'dividend_ledger.json').write_bytes(archive.json_bytes(result.dividend_ledger))
+    pd.DataFrame(result.dividend_ledger.get('entitlements', [])).to_csv(out_dir / 'dividend_entitlements.csv', index=False, encoding='utf-8-sig')
+    for name, data in result.artifacts.items():
+        if Path(name).name != name:
+            raise ValueError('封存檔名不得含路徑')
+        (out_dir / name).write_bytes(data)
+    replay = json.loads(result.artifacts['replay_inputs.json'])
+    snapshot = {**config, "strategy_manifest": replay['strategy_manifest'],
+                "code_version": json.loads(result.artifacts['source_manifest.json'])['code_version'],
+                "source_snapshot_sha256": hashlib.sha256(result.artifacts['source_snapshot.zip']).hexdigest()}
+    (out_dir / "config_snapshot.json").write_text(json.dumps(snapshot, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    s = result.summary
+    (out_dir / "report.md").write_text(
+        "# 正式策略回測報告\n\n"
+        "本報告重用正式策略引擎；不產生 D-Plan。只允許開始前缺檔暖機，回測途中缺資料即停止。\n\n"
+        "股利明細完整性未經系統認證；未指定 terminal_date 時權益不納入 NAV。分割等未支持事件遇曝險時停止。\n\n"
+        f"- 交易日：{s.get('start_date', '—')} 至 {s.get('end_date', '—')}（{s['records']} 日）\n"
+        f"- 累積報酬：{s.get('cumulative_return', 0):.2%}\n"
+        f"- 最大回撤：{s.get('max_drawdown', 0):.2%}\n"
+        f"- 總換手率：{s.get('total_turnover', 0):.2%}\n"
+        f"- 總成本：{s.get('total_cost', 0):,.0f}\n"
+        f"- 略過日期：{len(result.skipped_dates)}（詳見 summary.json）\n",
+        encoding="utf-8",
+    )
+    manifest = {'format': 'backtest-archive-v1', 'files': {
+        p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in out_dir.iterdir() if p.is_file()}}
+    (out_dir / 'integrity.json').write_bytes(archive.json_bytes(manifest))
+    archive.verify_archive(out_dir)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="正式策略的 point-in-time 回測；不產生 D-Plan")
+    parser.add_argument("--start", help="起始交易日 YYYY-MM-DD")
+    parser.add_argument("--end", help="結束交易日 YYYY-MM-DD")
+    parser.add_argument("--days", type=int, help="最多處理交易日數")
+    parser.add_argument("--out-dir", type=Path, help="輸出目錄；預設 output/backtest/formal_<時間>")
+    parser.add_argument('--corporate-actions', type=Path, help='已核實的股利／公司事件 JSON 明細')
+    parser.add_argument('--terminal-date', help='指定競賽／研究期末日，僅該日將累計股利納入最終 NAV')
+    parser.add_argument('--replay', type=Path, help='驗證並重播封存輸入；不讀現行行情或股票主檔')
+    args = parser.parse_args()
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f") + '_' + uuid4().hex[:8]
+    out_dir = args.out_dir or ROOT / "output" / "backtest" / f"formal_{stamp}"
+    out_dir = archive.safe_output(out_dir)
+    action_source = None
+    if args.replay:
+        if any([args.start, args.end, args.days is not None, args.corporate_actions, args.terminal_date]):
+            parser.error('--replay 不可覆寫封存的日期、事件與期末設定')
+        inputs = archive.ArchivedInputs(args.replay)
+        actions = [CorporateAction(**r) for r in inputs.payload['corporate_actions']]
+        terminal_date = inputs.payload['terminal_date']
+        known = {tuple(r) for r in inputs.payload['known_exrights']}
+    else:
+        inputs = StoreInputs(history=True, strict_history=True)
+        actions, action_source = load_actions(args.corporate_actions) if args.corporate_actions else ([], None)
+        terminal_date, known = args.terminal_date, None
+    result = run_formal_backtest(inputs, start=args.start, end=args.end, days=args.days,
+                                corporate_actions=actions, terminal_date=terminal_date, known_exrights=known)
+    if action_source:
+        result.artifacts['corporate_actions_source.json'] = archive.json_bytes(action_source)
+    if args.replay:
+        for name, frame in [('daily_nav', result.daily_nav), ('holdings', result.holdings),
+                            ('trades', result.trades), ('compliance', result.compliance),
+                            ('factor_diagnostics', result.factor_diagnostics)]:
+            if len(frame.columns) == 0:
+                if (args.replay / f'{name}.csv').read_text(encoding='utf-8-sig').strip():
+                    raise ValueError(f'重播 {name} 空表不一致')
+                continue
+            expected = pd.read_csv(args.replay / f'{name}.csv', dtype={'ticker': str})
+            # 使用相同 CSV round-trip 比較空字串／NA，不將缺值推論誤判成策略差異。
+            got = pd.read_csv(StringIO(frame.to_csv(index=False)), dtype={'ticker': str})
+            pd.testing.assert_frame_equal(expected, got, check_dtype=False, rtol=1e-10, atol=1e-6)
+        expected_book = json.loads((args.replay / 'dividend_ledger.json').read_text(encoding='utf-8'))
+        if expected_book != result.dividend_ledger:
+            raise ValueError('重播股利權益不一致')
+        result.summary['replay_verified'] = True
+    write_result(result, out_dir, config={"start": args.start, "end": args.end, "days": args.days,
+                                          "history": True, "strict_history": True, "terminal_date": terminal_date,
+                                          "news_policy": "中性；未建置歷史新聞快照"})
+    print(f"正式回測完成：{out_dir}；有效交易日 {result.summary['records']}，略過 {len(result.skipped_dates)} 日")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,11 @@
+﻿checked_at,date,source,kind,compared,matched,missing,mismatch_examples
+2026-10-03T17:32:37,2026-10-02,tpex_openapi,quotes,50,50,0,
+2026-10-03T17:32:37,2026-10-02,mis,quotes,50,50,0,
+2026-10-03T17:32:37,2026-10-02,finmind,quotes,50,50,0,
+2026-10-03T17:32:37,2026-10-02,tpex_openapi,insti,50,50,0,
+2026-10-03T17:32:37,2026-10-02,finmind,insti,50,50,0,
+2026-10-13T18:10:02,2026-10-13,tpex_openapi,quotes,50,50,0,
+2026-10-13T18:10:02,2026-10-13,mis,quotes,50,50,0,
+2026-10-13T18:10:02,2026-10-13,finmind,quotes,50,50,0,
+2026-10-13T18:10:02,2026-10-13,tpex_openapi,insti,50,50,0,
+2026-10-13T18:10:02,2026-10-13,finmind,insti,50,50,0,
