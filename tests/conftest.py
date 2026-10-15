@@ -6,6 +6,15 @@ from dataclasses import dataclass, field
 
 import pytest
 
+
+@pytest.fixture(autouse=True, scope='session')
+def isolated_code_archive(tmp_path_factory):
+    """Tests must never write production archives."""
+    from src.agent import codeversion
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(codeversion, 'ARCHIVE_DIR', tmp_path_factory.mktemp('code_archive'))
+        yield
+
 from src.agent.inputs import MockInputs
 from src.agent.reasoner import TemplateReasoner
 from src.agent.run_daily import run_day

@@ -3,12 +3,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import hashlib
 from pathlib import Path
 from typing import Callable
 
 import pandas as pd
 
 from .shadow_quant import MODEL_VERSION, compute_shadow_ranking, read_news_snapshot
+from .metrics import selection_change
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_HOLDING_PERIODS = (5, 20, 60)
@@ -72,6 +74,8 @@ def _record(*, as_of: str, future: str | None, period: int, variant: str, rankin
     if ranking is None:
         return base | {"ranking_status": "unavailable", "ranking_reason": unavailable_reason, "integrity_status": "ranking_unavailable"}
     base["news_policy"] = ranking["news_policy"].iloc[0]
+    if not selected:
+        return base | {'ranking_status': 'available', 'ranking_reason': '', 'integrity_status': 'no_selection'}
     if returns is None:
         return base | {"ranking_status": "available", "ranking_reason": "", "integrity_status": "not_mature"}
     score_tech, score_all, _ = VARIANTS[variant]
@@ -123,7 +127,7 @@ def run_shadow_backtest(
             audits.append(pd.DataFrame([{"as_of_date": as_of, "ranking_status": "unavailable", "ranking_reason": reason}]))
         for variant, (_, _, selected_col) in VARIANTS.items():
             selected = set() if ranking is None else set(ranking.loc[ranking[selected_col], "ticker"].astype(str))
-            turnover = None if previous[variant] is None else 1 - len(selected & previous[variant]) / selected_count
+            change = None if previous[variant] is None or ranking is None else selection_change(previous[variant], selected)
             if ranking is not None:
                 previous[variant] = selected
             for period in holding_periods:
@@ -140,7 +144,11 @@ def run_shadow_backtest(
                     selected_missing = {ticker: all_missing[ticker] for ticker in selected if ticker in all_missing}
                     row = _record(as_of=as_of, future=future, period=period, variant=variant, ranking=ranking, selected=selected,
                                   returns=returns, missing=selected_missing, intended=selected_count)
-                row["turnover_rate"] = turnover
+                # No positions or fills in this signal study: never invent executed turnover.
+                row["turnover_rate"] = None
+                row["selection_change_rate"] = change
+                row["turnover_definition"] = "not_available_signal_only"
+                row["selection_shortfall"] = max(0, selected_count - len(selected))
                 rows.append(row)
     return pd.concat(audits, ignore_index=True, sort=False), pd.DataFrame(rows), unavailable
 
@@ -219,17 +227,39 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="研究線量價控制實驗；不得正式下單")
     parser.add_argument("--selected-count", type=int, default=45); parser.add_argument("--periods", default="5,20,60")
     parser.add_argument("--production-ranking", type=Path); parser.add_argument("--news-csv", type=Path)
-    parser.add_argument("--out-dir", type=Path, default=ROOT / "output" / "research")
+    parser.add_argument("--out-dir", type=Path, required=True, help="獨立新目錄；禁止覆寫")
     args = parser.parse_args(); periods = tuple(int(x) for x in args.periods.split(","))
+    root = (ROOT / 'output' / 'research').resolve()
+    target = args.out_dir.resolve()
+    if not target.is_relative_to(root) or target == root or target.exists():
+        parser.error('輸出必須是 output/research 下尚不存在的子目錄')
     daily = pd.read_csv(ROOT / "data" / "market" / "daily.csv", dtype={"ticker": str}, encoding="utf-8-sig")
+    from . import codeversion
+    source_paths = codeversion._files() + [ROOT / 'data/market/daily.csv', ROOT / 'data/history/fundamental/fund_history.csv']
+    if args.news_csv:
+        source_paths.append(args.news_csv)
+    source_hashes = {p: hashlib.sha256(p.read_bytes()).hexdigest() for p in source_paths if p.is_file()}
     from .inputs import StoreInputs
     history = StoreInputs(history=True)
-    loader = (lambda day: read_news_snapshot(args.news_csv, day, require_dated=True, require_cutoff=True)) if args.news_csv else None
+    from .news_contract import NewsSnapshots
+    loader = NewsSnapshots(args.news_csv) if args.news_csv else None
     audit, report, unavailable = run_shadow_backtest(daily, selected_count=args.selected_count, holding_periods=periods,
-        fundamental_loader=history.fundamental_for_date, news_loader=loader, formal_a3_loader=_formal_a3 if loader else None)
+        fundamental_loader=history.fundamental_for_date, news_loader=loader,
+        formal_a3_loader=(lambda day: _formal_a3(daily, day)) if loader else None)
+    if any(not p.is_file() or hashlib.sha256(p.read_bytes()).hexdigest() != h for p, h in source_hashes.items()):
+        raise ValueError('研究執行中程式或資料已變更；不產出混合版本結果')
+    args.out_dir.mkdir(parents=True, exist_ok=False)
+    manifest = {'model_version': MODEL_VERSION, 'selected_count': args.selected_count,
+                'holding_periods': periods, 'strategy_scope': 'signal_only_no_formal_promotion',
+                'hashes': {str(p): h for p, h in source_hashes.items()}}
+    (args.out_dir / 'experiment_manifest.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding='utf-8')
     _write_csv(audit, args.out_dir / "research_ranking_audit.csv"); _write_csv(report, args.out_dir / "control_backtest_audit.csv")
     _write_csv(selected_difference_report(audit), args.out_dir / "selected_differences.csv")
     _write_csv(paired_evaluable_report(report), args.out_dir / "paired_evaluable_comparison.csv")
+    if args.production_ranking:
+        production = pd.read_csv(args.production_ranking, dtype={'ticker': str})
+        _write_csv(compare_rankings(audit, production, selected_count=args.selected_count),
+                   args.out_dir / 'production_overlap.csv')
     (args.out_dir / "research_summary.json").write_text(json.dumps(summarize_backtest(report, unavailable), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"研究控制實驗已寫出至 {args.out_dir}；僅訊號／完整性稽核，非正式投組績效")
 

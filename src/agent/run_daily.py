@@ -203,6 +203,9 @@ def run_day(
         raise RuntimeError(f"{mode} 模式的 team_id 必須是 {MODES[mode]['team_id']}，避免誤交")
     if mode == "live" and not is_submit_day(trade_date):
         raise RuntimeError(f"{trade_date} 證交所休市，不是交易日（休市日沒有 D-Plan）")
+    if mode == 'live':
+        from .official_policy import require_formal_release
+        require_formal_release()
 
     started = f"{trade_date}T06:00:00+08:00" if mode == "mock" else _now()
     day: DayInputs = inputs.day(trade_date)

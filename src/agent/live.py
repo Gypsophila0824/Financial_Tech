@@ -114,6 +114,11 @@ def make_llms(say):
 
 def cmd_run(args) -> int:
     say = Log("live_run")
+    from .official_policy import require_formal_release
+    try:
+        require_formal_release()
+    except (OSError, ValueError) as exc:
+        return say.stop(str(exc))
     T = args.trade_date
     say(f"===== 正式執行 {T}（{datetime.now(TPE):%Y-%m-%d %H:%M:%S}）=====")
     if not is_trading_day(T):
@@ -286,12 +291,7 @@ def cmd_settle(args) -> int:
     audit_path = history / f"settlement_{T}.json"
     if audit_path.exists():
         return say.stop("此日已有結算稽核，請先確認先前是否已完成，禁止覆寫。")
-    # 先封存對帳證據，最後才寫入正式帳本；中斷時保留稽核，不自動重跑覆寫。
-    with (history / f"official_{T}.json").open("xb") as stream:
-        stream.write(official_raw)
-    with (history / f"receipt_{T}.bin").open("xb") as stream:
-        stream.write(receipt_raw)
-    submissions.write_new(audit_path, {
+    audit = {
         "team_id": args.team_id, "trade_date": T, "before": before, "orders": plan["orders"],
         "submission_dir": str(submission_path) if submission_path else None,
         "submitted_orders": submitted_orders,
@@ -300,13 +300,28 @@ def cmd_settle(args) -> int:
         "no_trades_reason": args.reason if args.no_trades else None,
         "official_sha256": submissions.digest(official_raw), "receipt_sha256": submissions.digest(receipt_raw),
         "ledger_digest": submissions.state_digest(new_state),
-    })
-    if LEDGER.exists():
-        shutil.copy(LEDGER, history / f"ledger_before_{T}.json")
-    new_state.save(LEDGER)
+    }
+    from .settlement_transaction import commit, encoded
+    try:
+        commit(LEDGER, T, args.team_id, asdict(state), asdict(new_state), {
+            f'official_{T}.json': official_raw, f'receipt_{T}.bin': receipt_raw,
+            f'settlement_{T}.json': encoded(audit), f'ledger_before_{T}.json': encoded(asdict(state))})
+    except (OSError, ValueError) as exc:
+        return say.stop(f'結算提交中斷：{exc}；保留 journal，請使用 recover')
     print_ledger(new_state, say)
     say("\n請與後台當日結算（19:00 更新）核對；不一致時以主辦方為準修正 data/state/ledger.json，"
         "下次 live run 會自動核對股數。")
+    return 0
+
+
+def cmd_recover(args) -> int:
+    from .settlement_transaction import recover
+    say = Log('live_recover')
+    try:
+        recover(LEDGER, args.trade_date, args.team_id)
+    except (OSError, ValueError, KeyError) as exc:
+        return say.stop(f'恢復未完成：{exc}')
+    say('已由封存 journal 恢復；未重新成交或扣費。')
     return 0
 
 
@@ -315,7 +330,7 @@ def main() -> None:
         sys.stdout.reconfigure(errors="replace")       # cp950 終端機無法顯示 ✅ 等符號
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for name in ("run", "settle", "confirm-submission"):
+    for name in ("run", "settle", "confirm-submission", "recover"):
         p = sub.add_parser(name)
         p.add_argument("--trade-date", required=True)
         p.add_argument("--team-id", required=True)
@@ -328,7 +343,7 @@ def main() -> None:
             p.add_argument("--receipt-file", type=Path, required=True)
             p.add_argument("--submitted-at", required=True, help="平台成功提交時間，含 +08:00")
             p.add_argument("--confirmed", action="store_true", help="已核對回執對應本次執行檔")
-        else:
+        elif name == 'settle':
             p.add_argument("--official-state", type=Path, required=True, help="官方 team_id/as_of/holdings/cash/nav JSON")
             p.add_argument("--receipt-file", type=Path, required=True, help="平台當日結算／無交易證據")
             status = p.add_mutually_exclusive_group()
@@ -338,7 +353,8 @@ def main() -> None:
     args = ap.parse_args()
     if args.team_id in ("MOCK", "REPLAY"):
         sys.exit("正式模式請使用主辦方配發的 team_id")
-    sys.exit({"run": cmd_run, "settle": cmd_settle, "confirm-submission": cmd_confirm_submission}[args.cmd](args))
+    sys.exit({"run": cmd_run, "settle": cmd_settle, "confirm-submission": cmd_confirm_submission,
+              'recover': cmd_recover}[args.cmd](args))
 
 
 if __name__ == "__main__":

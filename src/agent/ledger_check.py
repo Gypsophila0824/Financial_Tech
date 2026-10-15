@@ -78,6 +78,16 @@ def check(ledger_path: Path, out_dir: Path, team_id: str, daily: pd.DataFrame) -
 
     bundle_path = out_dir / f"inputs_{team_id}_{as_of}.json"
     plan_path = out_dir / f"D-Plan_{team_id}_{as_of}.json"
+    settlement = ledger_path.parent / 'history' / f'settlement_{as_of}.json'
+    if settlement.exists():
+        record = json.loads(settlement.read_text(encoding='utf-8'))
+        from .submissions import state_digest
+        from .state import PortfolioState
+        if record.get('ledger_digest') != state_digest(PortfolioState(**pos)):
+            errors.append('帳本與已對帳結算稽核雜湊不符；請查明修改原因')
+        else:
+            notes.append('帳本與成功提交／官方結算稽核一致')
+        return errors, warnings, notes
     if not bundle_path.exists() or not plan_path.exists():
         warnings.append(f"找不到交易日 {as_of} 的 D-Plan 或輸入包，無法核對股數（若當日未繳交，持股應與前一日相同）")
         return errors, warnings, notes

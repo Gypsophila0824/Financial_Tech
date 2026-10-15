@@ -1,0 +1,10 @@
+{
+  "development": ["2025-09-19", "2026-06-30"],
+  "validation": ["2026-07-01", "2026-09-30"],
+  "test": ["2026-10-05", "2026-10-13"],
+  "research_selected_count": 25,
+  "news_policy": "neutral_ablation",
+  "claims_unseen_oos": false,
+  "prior_exposure_disclosure": "Existing historical data and Oct 5-13 results were already inspected. This is retrospective engineering validation, NOT unseen OOS.",
+  "terminal_date": null
+}

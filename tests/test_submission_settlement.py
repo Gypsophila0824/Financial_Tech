@@ -242,3 +242,30 @@ def test_backtest_rejects_missing_average():
             return {}
     with pytest.raises(ValueError, match="成交均價"):
         run_formal_backtest(MissingAverage(), start="2026-10-27", days=1)
+
+
+def test_recover_entry_is_idempotent_after_settlement(env):
+    env.confirm(env.run('recover_entry'))
+    env.official_for()
+    assert live.cmd_settle(env.args) == 0
+    before = live.LEDGER.read_bytes()
+    assert live.cmd_recover(env.args) == 0
+    assert live.cmd_recover(env.args) == 0
+    assert live.LEDGER.read_bytes() == before
+
+
+def test_recover_entry_after_interrupted_live_commit(env, monkeypatch):
+    from src.agent import settlement_transaction as tx
+    env.confirm(env.run('crash_entry'))
+    env.official_for()
+    real = tx.atomic_write
+    def crash(path, data):
+        if path == live.LEDGER:
+            raise OSError('synthetic interruption before ledger replace')
+        real(path, data)
+    monkeypatch.setattr(tx, 'atomic_write', crash)
+    assert live.cmd_settle(env.args) != 0
+    assert PortfolioState.load(live.LEDGER).as_of == env.state.as_of
+    monkeypatch.setattr(tx, 'atomic_write', real)
+    assert live.cmd_recover(env.args) == 0
+    assert PortfolioState.load(live.LEDGER).holdings == {'2330': 2000}

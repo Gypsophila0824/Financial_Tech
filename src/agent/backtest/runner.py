@@ -24,6 +24,7 @@ from ..governance import production_manifest
 from ..inputs import StoreInputs
 from ..state import PortfolioState, settle, trade_fee, trade_tax
 from ..tools.trading_calendar import trading_days
+from ..metrics import gross_turnover
 from . import archive
 from .corporate_actions import CorporateAction, DividendLedger, load_actions, validate_actions
 from .risk import (RiskState, active_share_status, add_warning, buy_overweight_reasons,
@@ -114,6 +115,8 @@ def run_formal_backtest(
     corporate_actions: list[CorporateAction] | None = None,
     terminal_date: str | None = None,
     known_exrights: set[tuple[str, str]] | None = None,
+    news_loader=None,
+    strategy_adapter=None,
 ) -> BacktestResult:
     """以當時可用資料重播正式策略，回傳完整稽核資料但不寫檔。
 
@@ -173,8 +176,15 @@ def run_formal_backtest(
 
         dividend_book.accrue(trade_date, state.holdings, actions, known_exrights)
 
-        # 正式邏輯：新聞歷史快照尚未建置時保持中性，與既有 replay 定義一致。
-        targets = build_targets(day.master, day.pv, day.fund, None, state.held_tickers(), day.benches)
+        if news_loader is not None:
+            day.news = news_loader(trade_date)
+            if day.news is None or set(day.master.index) - set(day.news.index):
+                raise ValueError('新聞快照未涵蓋全部候選；無新聞亦須明確記錄中性，不能默默補值')
+        if strategy_adapter is not None:
+            strategy_adapter.prepare(inputs, day)
+            targets = strategy_adapter(day, state)
+        else:
+            targets = build_targets(day.master, day.pv, day.fund, day.news, state.held_tickers(), day.benches)
         trade_plan = plan_trades(
             targets.picks, state.holdings, pd_to_decimal(state.cash), pd_to_decimal(state.nav),
             day.close, day.tradable, day.benches, day.data_date,
@@ -219,14 +229,19 @@ def run_formal_backtest(
                               or (isinstance(inputs, archive.ArchivedInputs)
                                   and inputs.payload.get("active_share_trackable", True)))
         etf_dates = day.etf_dates or {code: day.etf_date for code in day.benches}
-        risk_benches = day.benches if track_active_share else None
-        risk_etf_dates = etf_dates if track_active_share else None
+        evaluation_benches, evaluation_dates = (inputs.evaluation_benchmarks(trade_date)
+            if hasattr(inputs, 'evaluation_benchmarks') else (day.benches, etf_dates))
+        archived_days[-1]['evaluation_benches'] = {k: v.to_dict() for k, v in evaluation_benches.items()}
+        archived_days[-1]['evaluation_etf_dates'] = evaluation_dates
+        risk_benches = evaluation_benches if track_active_share else None
+        risk_etf_dates = evaluation_dates if track_active_share else None
         # 委託當下以前日收盤價可預見的加碼超限，不適用價格波動寬限。
         projected = settle(state, trade_date, orders, prev_close, prev_close)
         bought = {order.ticker for order in orders if order.side == "BUY"}
         candidate = settle(state, trade_date, orders, fill_prices, close_prices,
                             benchmarks=risk_benches, etf_dates=risk_etf_dates)
-        reasons = (invalid_reasons(candidate, set(day.master.index))
+        submission_reasons = (['submission_order_limit'] if len(orders) > rules.LAYER_LIMITS['orders'] else [])
+        reasons = (submission_reasons + invalid_reasons(candidate, set(day.master.index))
                    + buy_overweight_reasons(projected, bought)
                    + passive_grace_reasons(candidate))
         invalidated = bool(reasons)
@@ -242,7 +257,7 @@ def run_formal_backtest(
             trade_rows.extend(pending_trade_rows)
         add_warning(risk, trade_date, reasons)
         weights = _weights(state)
-        as_report = check_active_share(weights, day.benches)
+        as_report = check_active_share(weights, evaluation_benches)
         min_as = float(as_report["active_share"].min()) if not as_report.empty else None
         max_weight = float(weights.max()) if not weights.empty else 0.0
         max_other = float(weights.drop(index=rules.TSMC, errors="ignore").max()) if len(weights) else 0.0
@@ -263,7 +278,8 @@ def run_formal_backtest(
             "deferred_cash_dividends": float(dividend_book.cash),
             "deferred_stock_shares": float(sum(dividend_book.stocks.values())),
             "cash_pct": state.cash / state.nav, "n_holdings": len(state.holdings), "daily_return": daily_return,
-            "drawdown": drawdown, "turnover": (buy + sell) / prev_nav, "cost": cost,
+            "drawdown": drawdown, "turnover": gross_turnover(buy, sell, prev_nav), "cost": cost,
+            "active_share_same_day_data": bool(evaluation_dates) and all(d == trade_date for d in evaluation_dates.values()),
             "benchmark_return": benchmark_return, "benchmark_nav": benchmark_nav,
             "min_active_share": min_as, "max_weight": max_weight, "max_other_weight": max_other,
             "settlement_status": "invalidated" if invalidated else "executed",
@@ -313,7 +329,12 @@ def run_formal_backtest(
     if not daily.empty:
         daily["cumulative_return"] = daily["nav"] / rules.INITIAL_CAPITAL - 1
     summary = _summary(daily, skipped_dates)
-    summary.update({'dividend_policy': 'contest_deferred_dividends_v1', 'terminal_date': terminal_date,
+    strategy_manifest = strategy_adapter.manifest() if strategy_adapter else production_manifest()
+    summary.update({'strategy_manifest': strategy_manifest,
+                    'turnover_definition': 'gross_two_sided_notional_over_prior_nav_including_cash_excluding_fees',
+                    'news_policy': ('time_contract_checked_not_source_certified' if hasattr(news_loader, 'sha256') else 'injected_loader_unverified') if news_loader else ('archived_snapshot' if any('news' in d['frames'] for d in archived_days) else 'neutral_ablation_not_full_live_strategy'),
+                    'submission_validation': 'not_full_dplan_validation',
+                    'dividend_policy': 'contest_deferred_dividends_v1', 'terminal_date': terminal_date,
                     'dividend_data_coverage': 'user_supplied_events_not_certified_complete',
                     'terminal_nav_includes_dividends': terminal_date is not None,
                     'daily_risk_basis': 'trading_nav；期末股利調整不回寫可交易現金與風控分母',
@@ -325,7 +346,10 @@ def run_formal_backtest(
     artifacts['replay_inputs.json'] = archive.json_bytes({'days': archived_days,
         'active_share_trackable': not getattr(inputs, 'is_mock', False),
         'corporate_actions': [asdict(a) for a in actions], 'terminal_date': terminal_date,
-        'known_exrights': sorted(known_exrights), 'strategy_manifest': production_manifest()})
+        'known_exrights': sorted(known_exrights), 'strategy_manifest': strategy_manifest})
+    if hasattr(news_loader, 'raw'):
+        artifacts['news_snapshot.csv'] = news_loader.raw
+        summary['news_snapshot_sha256'] = news_loader.sha256
     archive.check_unchanged(source_hashes)
     return BacktestResult(daily, pd.DataFrame(holding_rows), pd.DataFrame(trade_rows),
                           pd.DataFrame(compliance_rows),
@@ -388,24 +412,38 @@ def main() -> None:
     parser.add_argument('--corporate-actions', type=Path, help='已核實的股利／公司事件 JSON 明細')
     parser.add_argument('--terminal-date', help='指定競賽／研究期末日，僅該日將累計股利納入最終 NAV')
     parser.add_argument('--replay', type=Path, help='驗證並重播封存輸入；不讀現行行情或股票主檔')
+    parser.add_argument('--news-snapshot', type=Path)
+    parser.add_argument('--strategy', choices=['production', 'research-equal'], default='production')
+    parser.add_argument('--research-count', type=int, help='研究投組實驗明確選定 20–30；不改原 45 檔訊號研究')
     args = parser.parse_args()
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f") + '_' + uuid4().hex[:8]
     out_dir = args.out_dir or ROOT / "output" / "backtest" / f"formal_{stamp}"
     out_dir = archive.safe_output(out_dir)
     action_source = None
     if args.replay:
-        if any([args.start, args.end, args.days is not None, args.corporate_actions, args.terminal_date]):
+        if any([args.start, args.end, args.days is not None, args.corporate_actions, args.terminal_date,
+                args.news_snapshot, args.strategy != 'production', args.research_count]):
             parser.error('--replay 不可覆寫封存的日期、事件與期末設定')
         inputs = archive.ArchivedInputs(args.replay)
         actions = [CorporateAction(**r) for r in inputs.payload['corporate_actions']]
         terminal_date = inputs.payload['terminal_date']
         known = {tuple(r) for r in inputs.payload['known_exrights']}
+        manifest = inputs.payload['strategy_manifest']
+        if manifest.get('version') == 'research-portfolio-equal-v1':
+            args.strategy, args.research_count = 'research-equal', manifest['selected_count']
     else:
         inputs = StoreInputs(history=True, strict_history=True)
         actions, action_source = load_actions(args.corporate_actions) if args.corporate_actions else ([], None)
         terminal_date, known = args.terminal_date, None
+    from ..news_contract import NewsSnapshots
+    from ..strategy_interface import ResearchPortfolio
+    if args.strategy == 'research-equal' and args.research_count is None:
+        parser.error('研究投組須 --research-count；不替使用者猜測原策略的配置規則')
+    adapter = ResearchPortfolio(args.research_count) if args.strategy == 'research-equal' else None
     result = run_formal_backtest(inputs, start=args.start, end=args.end, days=args.days,
-                                corporate_actions=actions, terminal_date=terminal_date, known_exrights=known)
+                                corporate_actions=actions, terminal_date=terminal_date, known_exrights=known,
+                                news_loader=NewsSnapshots(args.news_snapshot) if args.news_snapshot else None,
+                                strategy_adapter=adapter)
     if action_source:
         result.artifacts['corporate_actions_source.json'] = archive.json_bytes(action_source)
     if args.replay:
@@ -426,7 +464,8 @@ def main() -> None:
         result.summary['replay_verified'] = True
     write_result(result, out_dir, config={"start": args.start, "end": args.end, "days": args.days,
                                           "history": True, "strict_history": True, "terminal_date": terminal_date,
-                                          "news_policy": "中性；未建置歷史新聞快照"})
+                                          "news_policy": result.summary['news_policy'],
+                                          "strategy_manifest": result.summary['strategy_manifest']})
     print(f"正式回測完成：{out_dir}；有效交易日 {result.summary['records']}，略過 {len(result.skipped_dates)} 日")
 
 

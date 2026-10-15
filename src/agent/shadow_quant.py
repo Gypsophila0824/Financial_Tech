@@ -149,11 +149,18 @@ def compute_shadow_ranking(
 
     frame = daily.loc[daily["date"] <= as_of_date, list(REQUIRED_COLUMNS)].copy()
     frame["ticker"] = frame["ticker"].astype(str)
+    if frame.duplicated(['date', 'ticker']).any():
+        raise ValueError('行情股票／日期重複，不能覆蓋或重複計算')
+    window = sorted(frame['date'].unique())[-61:]
+    frame = frame.loc[frame['date'].isin(window)]
     frame = frame.sort_values(["ticker", "date"])
-    rows = []
+    rows, exclusions = [], []
     for ticker, group in frame.groupby("ticker", sort=True):
-        group = group.dropna(subset=["close", "volume", "value"]).tail(61)
-        if len(group) < 61 or group["date"].iloc[-1] != as_of_date:
+        values = group[['close', 'volume', 'value']].apply(pd.to_numeric, errors='coerce')
+        import numpy as np
+        if (len(group) < 61 or group['date'].iloc[-1] != as_of_date or
+                not np.isfinite(values.to_numpy()).all() or (values <= 0).any().any()):
+            exclusions.append({'ticker': ticker, 'reason': 'warmup_or_missing_invalid_quote_pending_review'})
             continue
         close = group["close"].astype(float).reset_index(drop=True)
         volume = group["volume"].astype(float).reset_index(drop=True)
@@ -218,7 +225,10 @@ def compute_shadow_ranking(
     baseline_eligible = baseline_order.index[baseline_order["research_eligible"]][:selected_count]
     out.loc[baseline_eligible, "baseline_selected"] = True
     out["model_version"] = MODEL_VERSION
-    return out.reset_index()
+    result = out.reset_index()
+    import json
+    result['candidate_exclusions'] = json.dumps(exclusions, ensure_ascii=False)
+    return result
 
 
 def main() -> None:
@@ -236,13 +246,17 @@ def main() -> None:
     # 依正式歷史回測政策固定為中性新聞分數。
     from .inputs import StoreInputs
     fundamental = StoreInputs(history=True).fundamental_for_date(args.date)
-    news = read_news_snapshot(args.news_csv, args.date, require_cutoff=True) if args.news_csv else None
+    from .news_contract import NewsSnapshots
+    news = NewsSnapshots(args.news_csv)(args.date) if args.news_csv else None
     from .datafeed import pv_factors
     formal_a3 = pv_factors.compute(daily, args.date)[0]["A3"] if news is not None else None
     result = compute_shadow_ranking(
         daily, args.date, selected_count=args.selected_count, fundamental=fundamental, news=news, formal_a3=formal_a3,
     )
     out = args.out or ROOT / "output" / "research" / f"shadow_quant_{args.date}.csv"
+    root = (ROOT / 'output/research').resolve()
+    if not out.resolve().is_relative_to(root) or out.exists():
+        raise ValueError('研究輸出須位於 output/research 且不可覆寫')
     out.parent.mkdir(parents=True, exist_ok=True)
     result.to_csv(out, encoding="utf-8-sig", index=False)
     print(f"已寫出研究用排名 {out}（{len(result)} 檔；不得用於正式下單）")

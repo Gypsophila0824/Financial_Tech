@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from decimal import ROUND_CEILING, ROUND_FLOOR, ROUND_HALF_UP, Decimal
+import math
 
 import pandas as pd
 
@@ -56,6 +57,12 @@ def check_active_share(weights: pd.Series, benches: dict[str, pd.Series]) -> pd.
 # ---------------------------------------------------------------- 選股與配權重（build_portfolio.py）
 def cap_weights(raw: pd.Series, caps: pd.Series, total: float) -> pd.Series:
     """依 raw 的比例分配 total，超過 caps 的部分依比例轉給未達上限者，反覆直到全部符合"""
+    if (raw.empty or not raw.index.is_unique or not raw.index.equals(caps.index)
+            or not math.isfinite(total) or total <= 0
+            or not raw.map(math.isfinite).all() or not (raw > 0).all()
+            or not caps.map(math.isfinite).all() or not (caps >= 0).all()
+            or caps.sum() < total - 1e-12):
+        raise ValueError('配權輸入無效或權重上限總和不足；禁止產生 NaN 投組')
     w = raw / raw.sum() * total
     fixed = pd.Series(False, index=w.index)
     for _ in range(len(w)):
@@ -80,6 +87,14 @@ class Targets:
 
 def build_targets(master: pd.DataFrame, pv: pd.DataFrame, fund: pd.DataFrame, news: pd.DataFrame | None,
                   held: list[str], benches: dict[str, pd.Series]) -> Targets:
+    if any(not f.index.is_unique for f in (master, pv, fund)) or (news is not None and not news.index.is_unique):
+        raise ValueError('策略輸入有重複股票索引')
+    if not benches:
+        raise ValueError('缺少 ETF 基準')
+    if news is not None and not news.empty:
+        scores = pd.to_numeric(news['news_score'], errors='raise')
+        if not scores.dropna().between(0, 1).all():
+            raise ValueError('新聞分數超出 0–1')
     df = master[["name", "market", "industry"]].copy()
     df = df.join(pv[["pv_score", "vol60", "A3"]]).join(fund[["fund_score"]])
     if news is not None and len(news):
@@ -89,6 +104,8 @@ def build_targets(master: pd.DataFrame, pv: pd.DataFrame, fund: pd.DataFrame, ne
     cols = list(S.SCORE_WEIGHTS)
     df[cols] = df[cols].fillna(S.NEUTRAL_SCORE)
     df["worst_event"] = df["worst_event"].fillna("")
+    if (df['worst_event'].str.startswith(f'{S.VETO_MATERIALITY}:') & df['A3'].isna()).any():
+        raise ValueError('重大利空缺少正式 A3；不得默默解除否決')
     df["veto"] = news_veto(df["worst_event"], df["A3"])
     df["total_score"] = sum(df[c] * w for c, w in S.SCORE_WEIGHTS.items())
     df = df.sort_values("total_score", ascending=False)
@@ -100,9 +117,13 @@ def build_targets(master: pd.DataFrame, pv: pd.DataFrame, fund: pd.DataFrame, ne
     vetoed = df[df["veto"]].copy()
     vetoed["held"] = [t in held for t in vetoed.index]
     picks = df.loc[kept + new].copy()
+    if picks.empty:
+        raise ValueError('沒有可用候選股票')
     # 權重 ∝（總分 − 0.5）÷ 60 日波動率；下限 0.01 避免總分約 0.5 的股票權重歸零
     edge = (picks["total_score"] - S.NEUTRAL_SCORE).clip(lower=0.01)
     raw_weight = edge / picks["vol60"].fillna(picks["vol60"].median())
+    if not raw_weight.map(math.isfinite).all() or not (raw_weight > 0).all():
+        raise ValueError('波動率為零／負值／不可得，無法安全配權')
     caps = pd.Series(S.CAP_OTHER, index=picks.index)
     if rules.TSMC in caps.index:
         caps[rules.TSMC] = S.CAP_2330

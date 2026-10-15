@@ -64,6 +64,9 @@ def check_unchanged(hashes: dict[Path, str]) -> None:
 def capture_day(day, fills, closes, previous_closes) -> dict:
     frames = {k: getattr(day, k).to_json(orient='split', double_precision=15, force_ascii=False)
               for k in ('master', 'pv', 'fund')}
+    for key in ('news', 'research_ranking'):
+        if getattr(day, key, None) is not None:
+            frames[key] = getattr(day, key).to_json(orient='split', double_precision=15, force_ascii=False)
     return {'trade_date': day.trade_date, 'data_date': day.data_date, 'frames': frames,
             'benches': {k: v.to_dict() for k, v in day.benches.items()},
             'close': day.close.to_dict(), 'tradable': sorted(day.tradable),
@@ -96,7 +99,7 @@ class ArchivedInputs:
         manifest = json.loads((path / 'source_manifest.json').read_text(encoding='utf-8'))
         # 股票主檔及行情使用封存，不要求現行 data/ 相同；程式與依賴則必須還原版本。
         for name, digest in manifest['files'].items():
-            if name.startswith('src/') or name == 'requirements.txt':
+            if name.startswith(('src/', 'config/')) or name == 'requirements.txt':
                 p = ROOT / name
                 if not p.is_file() or hashlib.sha256(p.read_bytes()).hexdigest() != digest:
                     raise ValueError(f'重播程式版本不一致，請先還原 source_snapshot.zip：{name}')
@@ -113,8 +116,9 @@ class ArchivedInputs:
                   for k, v in r['frames'].items()}
         for f in frames.values():
             f.index = f.index.astype(str)
+        news = frames.pop('news', None)
         return DayInputs(trade_date=r['trade_date'], data_date=r['data_date'], **frames,
-                         news=None, news_items={}, benches={k: pd.Series(v) for k, v in r['benches'].items()},
+                         news=news, news_items={}, benches={k: pd.Series(v) for k, v in r['benches'].items()},
                          etf_date=r['etf_date'], close=pd.Series(r['close']), tradable=set(r['tradable']),
                          market_sources={k: SourceSpec(**v) for k, v in r['market_sources'].items()},
                          fund_sources={k: SourceSpec(**v) for k, v in r['fund_sources'].items()},
@@ -122,6 +126,11 @@ class ArchivedInputs:
 
     def fill_prices(self, day):
         return self.rows[day]['fill_prices']
+
+    def evaluation_benchmarks(self, day):
+        r = self.rows[day]
+        return ({k: pd.Series(v) for k, v in r.get('evaluation_benches', r['benches']).items()},
+                r.get('evaluation_etf_dates', r['etf_dates']))
 
     def close_prices(self, day):
         if day in self.rows:

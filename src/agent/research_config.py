@@ -4,7 +4,7 @@
 策略參數仍只存在 ``strategy.py``。任何調整都應以新版本與回測報告封存。
 """
 
-MODEL_VERSION = "shadow-quant-fundamental-v4-control-audit"
+MODEL_VERSION = "shadow-quant-fundamental-v5-contract-audit"
 
 # 量價趨勢是研究線主排名的唯一可調整訊號組合。
 # 基準組是暫停前既有量價配方；控制實驗只能變更 EXPERIMENTAL_*，其餘

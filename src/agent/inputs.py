@@ -83,6 +83,7 @@ class DayInputs:
     statement_sources: dict[tuple, SourceSpec] = field(default_factory=dict)   # (market, is/bs, kind)
     notes: list[str] = field(default_factory=list)
     etf_dates: dict[str, str] = field(default_factory=dict)
+    research_ranking: pd.DataFrame | None = None  # optional strategy feature snapshot, never a live override
 
 
 def _market_sources(daily_day: pd.DataFrame, data_date: str) -> dict[str, SourceSpec]:
@@ -215,6 +216,12 @@ class StoreInputs:
                                          f"公開資訊觀測站月營收、營益分析、財報（彩排：{data_date} 當時已公布者）",
                                          f"{avail}T00:00:00+08:00")}
         return f.round(4), sources, {}
+
+    def evaluation_benchmarks(self, trade_date: str):
+        """Post-close only; never pass this result to the decision engine."""
+        notes = []
+        benches, _ = self._benches(trade_date, notes)
+        return benches, dict(self.etf_dates)
 
     def fundamental_for_date(self, data_date: str) -> pd.DataFrame:
         """回傳指定資料日當時可得的基本面快照，供研究線與回測共用。"""

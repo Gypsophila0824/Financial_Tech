@@ -1,0 +1,15 @@
+{
+  "schema": "official-policy-v1",
+  "reviewed_at": "2026-10-16",
+  "official_web_check": "403; latest applicable announcements not verified",
+  "pending": {
+    "fee_tax_rounding": "Existing floor-to-TWD is an unconfirmed simulation assumption",
+    "average_price_precision": "Existing four decimals; exact exchange whole-lot feed scope and platform precision require reconciliation",
+    "split_fractional_share": "Split adjustment and sub-share treatment not specified; unsupported events stop",
+    "active_share_observation": "Same-day announced top ten confirmed; exact publication/valuation cutoffs require platform validation",
+    "code_sharing_scope": "No inter-team private sharing; public repository and third-party usage scope require confirmation",
+    "live_corporate_actions": "Live event ledger and terminal dividend reconciliation are not implemented"
+  },
+  "formal_release_approved": false,
+  "approval_evidence": null
+}
