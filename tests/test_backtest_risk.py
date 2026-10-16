@@ -1,4 +1,5 @@
 from src.agent import rules
+from src.agent.active_share_risk import rule_definition
 from src.agent.backtest.risk import (RiskState, active_share_status, add_warning,
                                      buy_overweight_reasons, invalid_reasons,
                                      passive_grace_reasons, weights)
@@ -53,6 +54,8 @@ def test_active_share_separates_estimate_from_confirmed():
          'etfs': {'A': {'below_minimum': True, 'estimated_breach_streak': 2, 'same_date_breach_streak': 0},
                   'B': {'below_minimum': True, 'estimated_breach_streak': 2, 'same_date_breach_streak': 2}}},
     ]
+    for row in st.active_share_history:
+        row['active_share_rule'] = rule_definition()
     report = active_share_status(st, '2026-10-28')
     assert report['estimated_two_day_etfs'] == ['A', 'B']
     assert report['confirmed_two_day_etfs'] == ['B']

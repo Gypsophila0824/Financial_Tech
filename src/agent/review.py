@@ -71,11 +71,11 @@ def _write_review(plan: dict, checks: list[Check], state: PortfolioState, prices
     else:
         lines.append("無委託。")
 
-    top10 = dict(sorted(w_after.items(), key=lambda kv: -kv[1])[:10])
-    scores = sorted((active_share(top10, b), code) for code, b in benchmarks.items())
-    lines += ["", "## 前 10 大持股（交易後預估）", "",
-              "、".join(f"{t} {universe[t].name} {w:.1%}" for t, w in top10.items()),
-              "", "## Active Share 最低 3 檔（規則下限 20%）", ""]
+    top_holdings = dict(sorted(w_after.items(), key=lambda kv: -kv[1])[:rules.ACTIVE_SHARE_TOP_N])
+    scores = sorted((active_share(top_holdings, b), code) for code, b in benchmarks.items())
+    lines += ["", f"## 前 {rules.ACTIVE_SHARE_TOP_N} 大持股（交易後預估）", "",
+              "、".join(f"{t} {universe[t].name} {w:.1%}" for t, w in top_holdings.items()),
+              "", f"## Active Share 最低 3 檔（規則下限 {rules.ACTIVE_SHARE_MIN:.0%}）", ""]
     lines += [f"- {code}：{s:.1%}" for s, code in scores[:3]] or ["- 無基準資料"]
     lines += ["", "---", "審核原則：只能決定「繳交」或「退回重跑」，不得修改 D-Plan 任何內容。"]
 

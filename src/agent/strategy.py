@@ -18,7 +18,7 @@ BUFFER_RANK = 45               # 換股緩衝：已持有者仍在前 45 名就�
 TARGET_CASH = 0.05             # 目標現金；規則 0–25%
 CAP_2330 = 0.24                # 規則 25%，留 1% 緩衝（加碼超限當日即記警告）
 CAP_OTHER = 0.09               # 規則 10%，留 1% 緩衝
-AS_THRESHOLD = 0.30            # 目標權重的 Active Share 自訂門檻（官方 20% ＋ 10% 緩衝；ETF 持股資料比檢查日晚一天）
+AS_THRESHOLD = 0.30            # 目標權重的 Active Share 自訂門檻（官方 15% ＋ 15% 緩衝；ETF 持股資料比檢查日晚一天）
 MAX_AS_ITERATIONS = 100
 VETO_MATERIALITY = "high"      # 重大利空否決：近 3 日重大利空新聞…
 VETO_TREND_MAX = 0.0           # …且收盤價低於 60 日均價（A3 < 0）→ 不買進、已持有出清（不受換股緩衝保護）
@@ -27,7 +27,7 @@ VETO_TREND_MAX = 0.0           # …且收盤價低於 60 日均價（A3 < 0）�
 NO_TRADE_BAND = 0.02           # 已持有者權重偏離目標小於 2 個百分點不交易（回測由 1% 改 2%）
 CASH_CAP = 0.08                # 估算現金 > 8%：解除帶內偏低持股的無交易帶、補買到目標（現金回補）
 CASH_RESTORE = 0.03            # 估算現金 < 3%：解除帶內偏重持股的無交易帶、減碼到目標（現金下限回補）
-POST_AS_THRESHOLD = 0.25       # 委託後預估持股的 Active Share 下限（官方 20% ＋ 5% 緩衝）
+POST_AS_THRESHOLD = 0.25       # 委託後預估持股的 Active Share 下限（官方 15% ＋ 10% 緩衝）
 LIMIT_2330, LIMIT_OTHER = 0.245, 0.095   # 對齊整張後的權重上限；超過一定減碼（因應被動超限 5 日規則）
 PRICE_BUFFER = 0.08            # 現金下限 = max(1%, 淨買進金額 × 8%)：成交均價可能高於前日收盤
 CASH_FLOOR_MIN = 0.01

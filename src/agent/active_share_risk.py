@@ -12,6 +12,16 @@ from .tools.trading_calendar import is_trading_day
 EXPECTED_ETFS = frozenset(code for code, _ in ETFS)
 
 
+def rule_definition() -> dict:
+    """A history entry must identify the rule under which its score was calculated."""
+    return {"top_n": rules.ACTIVE_SHARE_TOP_N, "minimum": rules.ACTIVE_SHARE_MIN}
+
+
+def matches_current_rule(entry: dict) -> bool:
+    """Legacy top-ten observations must not extend a top-fifteen breach streak."""
+    return entry.get("active_share_rule") == rule_definition()
+
+
 def validate_benchmarks(benchmarks, dates: dict[str, str], as_of: str) -> list[str]:
     """缺檔、未來／未知日期或無效權重拒絕；較舊日期只提示，不假定違規。"""
     missing, extra = EXPECTED_ETFS - set(benchmarks), set(benchmarks) - EXPECTED_ETFS
@@ -20,8 +30,8 @@ def validate_benchmarks(benchmarks, dates: dict[str, str], as_of: str) -> list[s
     cutoff = date.fromisoformat(as_of)
     notes = []
     for code, weights in benchmarks.items():
-        if not 1 <= len(weights) <= 10 or len(set(weights.keys())) != len(weights):
-            raise ValueError(f"{code} 前十大個股空白、重複或超過十檔")
+        if not 1 <= len(weights) <= rules.ACTIVE_SHARE_TOP_N or len(set(weights.keys())) != len(weights):
+            raise ValueError(f"{code} 前 {rules.ACTIVE_SHARE_TOP_N} 大個股空白、重複或超過 {rules.ACTIVE_SHARE_TOP_N} 檔")
         values = list(weights.values()) if isinstance(weights, dict) else weights.tolist()
         if any(not math.isfinite(float(w)) or not 0 <= float(w) <= 1 for w in values) or not 0 < sum(values) <= 1.0001:
             raise ValueError(f"{code} 權重無效（應為占淨值原始比例，不可正規化）")
@@ -51,10 +61,13 @@ def record_close(history: list[dict], day: str, weights: dict, benchmarks: dict,
     if history and day < max(r['date'] for r in history):
         raise ValueError("不得回寫較早觀測日；請另建歷史回放")
     notes = validate_benchmarks(benchmarks, dates, day)
-    top = dict(sorted(weights.items(), key=lambda x: x[1], reverse=True)[:10])
+    top = dict(sorted(weights.items(), key=lambda x: x[1], reverse=True)[:rules.ACTIVE_SHARE_TOP_N])
     if any(not math.isfinite(w) or w < 0 for w in top.values()) or sum(top.values()) > 1.0001:
         raise ValueError("投組權重無效，無法計算 Active Share")
-    prior = next((r for r in history if r['date'] == previous_session(day)), None)
+    prior_record = next((r for r in history if r['date'] == previous_session(day)), None)
+    prior = prior_record if prior_record and matches_current_rule(prior_record) else None
+    if prior_record and prior is None:
+        notes.append("前一交易日 Active Share 紀錄使用舊制或未標示規則；保留舊紀錄，新制連續天數重新起算")
     rows = {}
     for code, bench in benchmarks.items():
         score = .5 * sum(abs(top.get(t, 0) - bench.get(t, 0)) for t in set(top) | set(bench))
@@ -64,6 +77,7 @@ def record_close(history: list[dict], day: str, weights: dict, benchmarks: dict,
         rows[code] = {'active_share': score, 'benchmark_date': dates[code], 'below_minimum': below,
                       'estimated_breach_streak': (old.get('estimated_breach_streak', 0) + 1) if below else 0,
                       'same_date_breach_streak': (old.get('same_date_breach_streak', 0) + 1) if below and current else 0}
-    entry = {'date': day, 'basis': 'local_close_not_official', 'prior_session_observed': prior is not None,
+    entry = {'date': day, 'basis': 'local_close_not_official', 'active_share_rule': rule_definition(),
+             'prior_session_observed': prior is not None,
              'notes': notes, 'etfs': rows}
     return [r for r in history if r['date'] != day] + [entry]

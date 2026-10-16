@@ -14,6 +14,7 @@ from pathlib import Path
 import pandas as pd
 
 from .governance import production_manifest
+from .active_share_risk import rule_definition
 from .inputs import DayInputs, SourceSpec, load_master
 
 
@@ -26,6 +27,7 @@ def save_bundle(path: Path, *, day: DayInputs, state, plan: dict) -> None:
         "trade_date": day.trade_date,
         "data_date": day.data_date,
         "code_version": plan["agent_metadata"]["code_version"],
+        "active_share_rule": rule_definition(),
         "strategy_manifest": production_manifest(),
         "pv": _frame(day.pv), "fund": _frame(day.fund), "news": _frame(day.news),
         "news_items": day.news_items,

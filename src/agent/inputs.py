@@ -1,4 +1,4 @@
-"""每日輸入：行情、量價因子、基本面因子、主動型 ETF 前十大、新聞分數，交給 factor_engine。
+"""每日輸入：行情、量價因子、基本面因子、主動型 ETF 前十五大、新聞分數，交給 factor_engine。
 
 StoreInputs（真實，彩排與正式共用）
   行情      data/market/daily.csv（datafeed.market 累積；證交所／櫃買官方，上櫃備援依序 OpenAPI→MIS→FinMind）
@@ -20,9 +20,11 @@ from pathlib import Path
 
 import pandas as pd
 
+from . import rules
 from .datafeed import fund_factors, pv_factors
+from .datafeed.etf_holdings import ETFS
 from .datafeed.market import FALLBACK_INSTI_SOURCES, FALLBACK_QUOTE_SOURCES
-from .factor_engine import etf_top10
+from .factor_engine import etf_top_holdings
 from .active_share_risk import validate_benchmarks
 from .tools.trading_calendar import trading_days
 
@@ -247,7 +249,7 @@ class StoreInputs:
         if "data_date" not in holdings or holdings.groupby("etf_id")["data_date"].nunique().ne(1).any():
             raise ValueError("ETF 快照缺少逐檔日期，或同一 ETF 混有不同日期")
         self.etf_dates = holdings.groupby("etf_id")["data_date"].first().to_dict()
-        benches = etf_top10(holdings)
+        benches = etf_top_holdings(holdings)
         # 舊 replay 明確允許最早快照彩排；正式與 strict_history 不得使用未來日期。
         cutoff = max(data_date, etf_date) if self.history and not self.strict_history else data_date
         notes.extend(validate_benchmarks(benches, self.etf_dates, cutoff))
@@ -304,10 +306,10 @@ class MockInputs:
         fund["roe_src"] = None
         self.fund = fund.round(4)
         self.benches = {}
-        for code in [f"00{n}A" for n in range(980, 1000)] + [f"00{n}A" for n in range(400, 410)]:
-            names = rng.sample([t for t in tickers if t != "2330"], 9)
+        for code, _ in ETFS:
+            names = rng.sample([t for t in tickers if t != "2330"], rules.ACTIVE_SHARE_TOP_N - 1)
             self.benches[code] = pd.Series({"2330": rng.uniform(0.08, 0.2),
-                                            **{t: rng.uniform(0.03, 0.08) for t in names}})
+                                            **{t: rng.uniform(0.02, 0.05) for t in names}})
 
     def prev_trading_day(self, trade_date: str) -> str:
         return self.days[self.days.index(trade_date) - 1]

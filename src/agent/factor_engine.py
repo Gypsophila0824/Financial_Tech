@@ -5,7 +5,7 @@
 由 run_daily.py 組裝成 D-Plan。參數一律取自 strategy.py。
 
 Active Share 官方口徑（Slack 答覆）：與每檔主動型 ETF 分別計算；雙方皆用占淨值的原始權重，不重新加總為 100%；
-採當日公告的 ETF 前十大（含海外股，排除期貨、選擇權）。
+採當日公告的 ETF 前十五大（含海外股，排除期貨、選擇權）。
 """
 
 from __future__ import annotations
@@ -23,8 +23,8 @@ FEE, TAX = Decimal(str(rules.FEE_RATE)), Decimal(str(rules.TAX_RATE))
 
 
 # ---------------------------------------------------------------- Active Share
-def etf_top10(holdings: pd.DataFrame) -> dict[str, pd.Series]:
-    """每檔 ETF 實際公布的前 10 大個股（含海外股，排除期貨、選擇權），權重轉為小數。
+def etf_top_holdings(holdings: pd.DataFrame) -> dict[str, pd.Series]:
+    """每檔 ETF 實際公布的前 15 大個股（含海外股，排除期貨、選擇權），權重轉為小數。
     台股以代號為鍵，海外股加上市場別避免與台股代號相撞，無代號者以名稱為鍵。"""
     h = holdings.copy()
     h["code"] = h["code"].fillna("").astype(str)
@@ -35,8 +35,8 @@ def etf_top10(holdings: pd.DataFrame) -> dict[str, pd.Series]:
         raise ValueError("ETF 持股有重複股票識別，請核對原始資料")
     s["weight_pct"] = pd.to_numeric(s["weight_pct"])
     if not s["weight_pct"].between(0, 100).all():
-        raise ValueError("ETF 個股權重缺值或超出 0–100%，不能略過後計算前十大")
-    s = s.sort_values("weight_pct", ascending=False).groupby("etf_id").head(10)
+        raise ValueError("ETF 個股權重缺值或超出 0–100%，不能略過後計算前十五大")
+    s = s.sort_values("weight_pct", ascending=False).groupby("etf_id").head(rules.ACTIVE_SHARE_TOP_N)
     return {etf: g.set_index("key")["weight_pct"] / 100 for etf, g in s.groupby("etf_id")}
 
 
@@ -48,7 +48,7 @@ def active_share(ours: pd.Series, bench: pd.Series) -> float:
 
 def check_active_share(weights: pd.Series, benches: dict[str, pd.Series]) -> pd.DataFrame:
     """每檔 ETF 的 Active Share 與重疊股票，由低到高排序"""
-    top = weights.sort_values(ascending=False).head(10)
+    top = weights.sort_values(ascending=False).head(rules.ACTIVE_SHARE_TOP_N)
     rows = [{"etf_id": etf, "active_share": active_share(top, b), "overlap": " ".join(top.index.intersection(b.index))}
             for etf, b in benches.items()]
     return pd.DataFrame(rows).set_index("etf_id").sort_values("active_share")
@@ -135,11 +135,11 @@ def build_targets(master: pd.DataFrame, pv: pd.DataFrame, fund: pd.DataFrame, ne
         worst = report.iloc[0]
         if worst["active_share"] >= S.AS_THRESHOLD:
             break
-        top = weights.sort_values(ascending=False).head(10)
+        top = weights.sort_values(ascending=False).head(rules.ACTIVE_SHARE_TOP_N)
         b = benches[worst.name]
         shared = top.index.intersection(b.index)
         if shared.empty:
-            raise RuntimeError(f"{worst.name} 與我方前 10 大沒有重疊，Active Share 仍只有 {worst['active_share']:.1%}")
+            raise RuntimeError(f"{worst.name} 與我方前 15 大沒有重疊，Active Share 仍只有 {worst['active_share']:.1%}")
         target = max(shared, key=lambda t: min(top[t], b[t]))
         # 從「目前權重」往下調，而非從上限往下調
         caps[target] = max(min(caps[target], weights[target]) - 0.01, 0.005)
@@ -298,7 +298,7 @@ def plan_trades(picks: pd.DataFrame, holdings: dict[str, int], cash: Decimal, na
         worst = as_report.iloc[0]
         if worst["active_share"] >= S.POST_AS_THRESHOLD:
             break
-        overlap = weights.nlargest(10).index.intersection(benches[worst.name].index)
+        overlap = weights.nlargest(rules.ACTIVE_SHARE_TOP_N).index.intersection(benches[worst.name].index)
         decided = {x["ticker"] for x in decisions}
         cands = [t for t in overlap if t in in_band and t not in decided and weights[t] > in_band[t][2]]
         if not cands:

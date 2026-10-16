@@ -1,0 +1,145 @@
+{
+  "schema": "active-share15-update-v1",
+  "provided_at": "2026-10-16",
+  "active_share_rule": {
+    "top_n": 15,
+    "minimum": 0.15
+  },
+  "files": [
+    {
+      "path": "CLAUDE.md",
+      "before_sha256": "7c25debb5ee3414168f01e62ad07ce41d8a1ff7e6aeb61f69863d78a17c2707a",
+      "after_sha256": "0b88be2a215d458fb7fae46c3fb9a8f521506e9b3a51ddcf258328571294dd6d"
+    },
+    {
+      "path": "config/official_policy.json",
+      "before_sha256": "fb45e882b4301ae8adf82bbdb175a0b67fb77101b7364e1a37efb64cd4df5df9",
+      "after_sha256": "75cbd6c603356c42acda45f528157f5021c094f2c34bd7e0aa9342511c047894"
+    },
+    {
+      "path": "docs/Active_Share每日風控修正.md",
+      "before_sha256": "9cb827a277c735595b215179bc771e80702703d40b17fa2e154db1720895893e",
+      "after_sha256": "f1007f0fb4982befb35a78646d863afd6ed340ecfba26f2a2ff70677477dd481"
+    },
+    {
+      "path": "docs/Active_Share規則更新_2026-10-16.md",
+      "before_sha256": null,
+      "after_sha256": "17a6ea9a665cc0f9e1b5bdc9b7dc367b79214cb002062d13b18d587acc12d21e"
+    },
+    {
+      "path": "docs/Yan工作報告_2026-10-14_15.md",
+      "before_sha256": "5729d9e84dbcd28086addc1b6455af22f3c6657ec0f4f6b00e2f8e376ae88929",
+      "after_sha256": "71cb763e7ceaf583206d07a864b3a748c2d06a0db77780df7ffdd3039b265b0d"
+    },
+    {
+      "path": "docs/值班手冊.md",
+      "before_sha256": "b4ba8f7925f973a3028985bcecf0411265ae0f8296c4a7cd0a08f0624089ee47",
+      "after_sha256": "601f5a24f30e3907e350382377033d8eab752b4b040228304bba5fc8a3c8d1cc"
+    },
+    {
+      "path": "docs/回測違規與風控狀態機.md",
+      "before_sha256": "35b3613e3563c0f1c12e873e77ae3a5e524e6c07a9b68f01607d6ac7eb9bb7b0",
+      "after_sha256": "4cf8177337f92fc752f5171ed21354fe952eb84eac04a3ad1d4deeed010f90e9"
+    },
+    {
+      "path": "docs/架構修正與驗收_2026-10-16.md",
+      "before_sha256": "3b2fde634519dcf6352d150b29a29518f74954c9978afac9ab364b3d3e6e4ea1",
+      "after_sha256": "cd6233624e100d68ca2f30fd258266a1430fd6213b13e165c8e886cf6b324eae"
+    },
+    {
+      "path": "docs/策略與系統架構規劃.md",
+      "before_sha256": "c3aa83a36bbfd85b49948481b58c003020e7bdfa5edda95255c28f9305238ccd",
+      "after_sha256": "d871360d6a43974bb359ba8b817416a7ac34b85d5534352a019ce7f4199e400c"
+    },
+    {
+      "path": "docs/重現說明.md",
+      "before_sha256": "90155bbcc808f4bb9992a5d93a8a0746dd0a3d593ffe6742e1f1951aeeef03f8",
+      "after_sha256": "ec0654ba2b608f95724a649933f28a26f5da2f238e1bb50e39ef3c1c83c80f20"
+    },
+    {
+      "path": "src/agent/active_share_risk.py",
+      "before_sha256": "b60dbd040f1adef3ef5a9d1b46a8a52f5243924fce4ee30caef981e6a9d303ee",
+      "after_sha256": "f87f0cb9efe7320e77300d4fb85d87c80ced6c2ee657ea976af1b04e50311928"
+    },
+    {
+      "path": "src/agent/backtest/risk.py",
+      "before_sha256": "5d3873f0c0c70eca03c433ba7d1b9f8534f52f77f882ab1e3b9d4c5fd856d885",
+      "after_sha256": "a3fbc7c94c65dd8def03005b7808ca97ffbaa8db6bfb01020a2aafa05d788e44"
+    },
+    {
+      "path": "src/agent/bundle.py",
+      "before_sha256": "bcbb09316106a3852f9bcfd92a576ad28829908721b4878d0360a5f2907db926",
+      "after_sha256": "45983d3605a16f5d7e4c5697d73d686b9edf4d6dea6721b6cec1e23f29927485"
+    },
+    {
+      "path": "src/agent/compliance.py",
+      "before_sha256": "0f3f5054578a973bd3640ad6ce6660136012ec9da045219f5d7947ce705df8a2",
+      "after_sha256": "4df4d6a86a5ff125449dacdb5abab7a41568ac62d52b9228cd1fd9660c2f2ce7"
+    },
+    {
+      "path": "src/agent/datafeed/etf_holdings.py",
+      "before_sha256": "7b5934bb8b0357d31e55725ce22043618da594b2d420f40b101a8b72e10474a0",
+      "after_sha256": "22cef9ed8d8a8b75b58fe45b0f6528be21a2392dc7cd8155de13511f40d5e16c"
+    },
+    {
+      "path": "src/agent/factor_engine.py",
+      "before_sha256": "96628baf29cd883cf2b0320c981ed969ca2ac2c095a211fde4283f980abffbc1",
+      "after_sha256": "5ced00ab8aed5ccb9d5d593c5293bfa0fdfe785db3fd85a702ed97ad14806530"
+    },
+    {
+      "path": "src/agent/governance.py",
+      "before_sha256": "b58b6f4110cb92d0dbce123aa09ea22426c615ef388d59c0ac398ab243118225",
+      "after_sha256": "07a38ebb4b18a1accc39a347519c78430380a1624342a91d4375f8e05236f6d2"
+    },
+    {
+      "path": "src/agent/inputs.py",
+      "before_sha256": "7078ac20719610876df8ba33a8e3ffae04f5b3b62bb8cd1d172eaacb49295dc9",
+      "after_sha256": "e922a69332fbd72b1ac7a086e5a9e47fecdb7e40bae36b03e69324f13a4545ab"
+    },
+    {
+      "path": "src/agent/review.py",
+      "before_sha256": "e1b2ff6569fcc8a3072ebadc5b70d5167cd3a33d591e06b2267bcbc032ba9719",
+      "after_sha256": "b88647d3818b2eb27fce72f2aab1d391c3e846938398055e9ba16df1c875f2a2"
+    },
+    {
+      "path": "src/agent/rules.py",
+      "before_sha256": "aec74725a32ef175d359b8cdec28add9d10b78706ffb6c5536012e8f0f6c4065",
+      "after_sha256": "31d46f6b5c910cd1f9af84656c2d440399181c8ad99231a58f586d3978e63f85"
+    },
+    {
+      "path": "src/agent/run_daily.py",
+      "before_sha256": "640dce4f043802124d4cc899bbd0c18b51ffa55198751f5a1ed078403727be2e",
+      "after_sha256": "97ec81e7c855a5d149e35615331e48303daf05a4e61a6a64fc82dcf3b228eba2"
+    },
+    {
+      "path": "src/agent/strategy.py",
+      "before_sha256": "c6f4efa19f82cdb8cee5f3636396c04b0ae52bb19f51e7551aec932909ce1127",
+      "after_sha256": "72601987669260687c05fbbc7240429c0c4fdddbd12ad5ec927ea33af4e6a72c"
+    },
+    {
+      "path": "src/agent/strategy_doc.py",
+      "before_sha256": "e61d124178995d2cdb77d98b479637a097a61eb3355c14b75056f674b356aac0",
+      "after_sha256": "de5aeb5c185ae3f529863172d4976011b2eeb3e14d5f14f17863e45784f9ffb0"
+    },
+    {
+      "path": "tests/test_active_share_risk.py",
+      "before_sha256": "d7f030c1ce425e4f648d07363b7e505b95469275da78ea743716c315601e085c",
+      "after_sha256": "7207366c364e721bd33adb8e3ab68dfa0e06c806d745c1db27ce2421c3ca1fcf"
+    },
+    {
+      "path": "tests/test_active_share_rule_update.py",
+      "before_sha256": null,
+      "after_sha256": "0e129c9fe57a1925d46f1dec83d15105a9aa3b715642bf4d8085cf065b4c84da"
+    },
+    {
+      "path": "tests/test_backtest_risk.py",
+      "before_sha256": "e7f34da19479b64cf9a096f948192c637357177d8726a7d547b3865664194da1",
+      "after_sha256": "b9f5eedaa10f816c86800c2fad621799e5c50a288a1fbdc14461650d2b058e6a"
+    },
+    {
+      "path": "tests/test_compliance.py",
+      "before_sha256": "0b4481928e019f5a6050bb29eb4b8274f740e79af1e2e2c9d619f243e84f5e37",
+      "after_sha256": "8c1bab81da6c34dc1dc33a428869aa42e61b24e6c8f8a677e8328785776af5e5"
+    }
+  ]
+}

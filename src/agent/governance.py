@@ -39,6 +39,7 @@ def production_manifest() -> dict:
                 "target_active_share": strategy.AS_THRESHOLD,
                 "post_order_active_share": strategy.POST_AS_THRESHOLD,
                 "official_active_share_minimum": rules.ACTIVE_SHARE_MIN,
+                "official_active_share_top_n": rules.ACTIVE_SHARE_TOP_N,
                 "cash_restore": strategy.CASH_RESTORE,
                 "cash_cap": strategy.CASH_CAP,
                 "price_buffer": strategy.PRICE_BUFFER,

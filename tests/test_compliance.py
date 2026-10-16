@@ -131,21 +131,21 @@ def test_no_dplan_for_oct26():
 
 
 def test_active_share_low_is_warning_only(mock_run):
-    """連續 2 日低於 20% 才取消資格：單日偏低只警示（仍須繳交，不交會記未繳交警告）"""
+    """連續 2 日低於 15% 才取消資格：單日偏低只警示（仍須繳交，不交會記未繳交警告）"""
     trade_date, state, r = mock_run.days[BUSY]
     plan = plan_of(mock_run, BUSY)
     ctx = context(mock_run, BUSY)
     from src.agent.compliance import estimate_post_trade
     post, _, nav, _, _ = estimate_post_trade({t: s for t, s in state.holdings.items() if s > 0}, state.cash,
                                              plan["orders"], ctx.prev_close)
-    ours = dict(sorted(((t, s * ctx.prev_close[t] / nav) for t, s in post.items()), key=lambda kv: -kv[1])[:10])
+    ours = dict(sorted(((t, s * ctx.prev_close[t] / nav) for t, s in post.items()), key=lambda kv: -kv[1])[:rules.ACTIVE_SHARE_TOP_N])
     checks = run_checks(plan, context(mock_run, BUSY, benches={"CLONE": ours}))
-    warn = next(c for c in checks if c.rule == "六(十三) Active Share ≥ 20%")
+    warn = next(c for c in checks if c.rule == f"六(十三) Active Share ≥ {rules.ACTIVE_SHARE_MIN:.0%}")
     assert warn.level == "WARN" and not warn.passed and not rejected(checks)
 
 
 def test_missing_benchmarks_rejected(mock_run):
-    assert "六(十三) Active Share ≥ 20%" in rejected(run_checks(plan_of(mock_run, BUSY), context(mock_run, BUSY, benches={})))
+    assert f"六(十三) Active Share ≥ {rules.ACTIVE_SHARE_MIN:.0%}" in rejected(run_checks(plan_of(mock_run, BUSY), context(mock_run, BUSY, benches={})))
 
 
 def test_cash_limit_inclusive():

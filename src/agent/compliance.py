@@ -21,7 +21,7 @@ from pathlib import Path
 from jsonschema import Draft202012Validator
 
 from . import rules, strategy
-from .active_share_risk import previous_session, validate_benchmarks
+from .active_share_risk import matches_current_rule, previous_session, validate_benchmarks
 from .models import DecisionDraft
 from .state import PortfolioState, trade_fee, trade_tax
 from .tools.order_generation import derive_orders
@@ -44,7 +44,7 @@ class ComplianceContext:
     state: PortfolioState                       # 主辦方前日結算（正式版須先與庫存明細對帳）
     prev_close: dict[str, float]
     universe: dict[str, Security]
-    benchmarks: dict[str, dict[str, float]]     # 主動型 ETF 前 10 大
+    benchmarks: dict[str, dict[str, float]]     # 主動型 ETF 前 15 大
     filename: str
     live: bool                                  # 正式模式才檢查繳交時窗
     data_notes: list[str] = None                # 資料來源備援等提醒
@@ -64,7 +64,7 @@ def submit_window(trade_day: date, tz) -> tuple[datetime, datetime]:
 
 
 def active_share(ours: dict[str, float], bench: dict[str, float]) -> float:
-    """六(十三)：Active Share = 1/2 × Σ|Wi(投資組合) − Wi(Benchmark)|，取雙方前 10 大的聯集。"""
+    """六(十三)：Active Share = 1/2 × Σ|Wi(投資組合) − Wi(Benchmark)|，取雙方前 15 大的聯集。"""
     names = set(ours) | set(bench)
     return 0.5 * sum(abs(ours.get(t, 0.0) - bench.get(t, 0.0)) for t in names)
 
@@ -252,25 +252,27 @@ def run_checks(plan: dict, ctx: ComplianceContext) -> list[Check]:
                 "逐檔資料日與檢查日一致" if not freshness else "；".join(freshness))
         except ValueError as exc:
             add("REJECT", "Active Share 官方清單與資料完整性", False, str(exc))
-    top10 = dict(sorted(weights.items(), key=lambda kv: -kv[1])[:10])
-    scores = {code: active_share(top10, b) for code, b in ctx.benchmarks.items()}
+    top_holdings = dict(sorted(weights.items(), key=lambda kv: -kv[1])[:rules.ACTIVE_SHARE_TOP_N])
+    scores = {code: active_share(top_holdings, b) for code, b in ctx.benchmarks.items()}
     if scores:
         worst_code = min(scores, key=scores.get)
         worst = scores[worst_code]
         # 預估值不是官方裁定；單日 WARN 並不表示官方豁免單日門檻。
-        add("WARN", "六(十三) Active Share ≥ 20%", worst >= rules.ACTIVE_SHARE_MIN,
+        add("WARN", f"六(十三) Active Share ≥ {rules.ACTIVE_SHARE_MIN:.0%}", worst >= rules.ACTIVE_SHARE_MIN,
             f"最低 {worst:.2%}（vs {worst_code}）" + ("" if worst >= rules.ACTIVE_SHARE_MIN else
               "——❗ 預估低於官方門檻（非單日豁免）；連續兩日低於門檻，主辦方有權取消資格"))
         add("WARN", "Active Share 安全邊際", worst >= strategy.ACTIVE_SHARE_WARN,
             f"最低 {worst:.2%}，預警線 {strategy.ACTIVE_SHARE_WARN:.0%}")
     else:
-        add("REJECT", "六(十三) Active Share ≥ 20%", False, "缺少主動型 ETF 前 10 大持股資料")
+        add("REJECT", f"六(十三) Active Share ≥ {rules.ACTIVE_SHARE_MIN:.0%}", False, "缺少主動型 ETF 前 15 大持股資料")
 
     if ctx.live:
         prior_day = previous_session(plan['trade_date'])
-        prior = next((r for r in ctx.state.active_share_history if r['date'] == prior_day), None)
+        prior = next((r for r in ctx.state.active_share_history
+                      if r['date'] == prior_day and matches_current_rule(r)), None)
         add("WARN", "Active Share 前日收盤觀測", prior is not None or not holdings,
-            f"本地觀測 {prior_day}（非官方裁定）" if prior else "尚無前一交易日觀測，不能判定連續低於門檻")
+            f"本地觀測 {prior_day}（非官方裁定）" if prior else
+            "尚無前一交易日的新制觀測（舊制紀錄不接續），不能判定連續低於門檻")
         risk = [code for code, score in scores.items() if score < rules.ACTIVE_SHARE_MIN
                 and prior and prior['etfs'].get(code, {}).get('below_minimum')]
         add("REJECT", "Active Share 連續低於門檻風險（內部保護）", not risk,

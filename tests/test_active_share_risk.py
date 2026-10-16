@@ -1,10 +1,12 @@
 import copy
 
+from src.agent import rules
+
 import pandas as pd
 import pytest
 
 from src.agent.active_share_risk import EXPECTED_ETFS, record_close, validate_benchmarks
-from src.agent.factor_engine import etf_top10, active_share
+from src.agent.factor_engine import etf_top_holdings, active_share
 from src.agent.inputs import StoreInputs
 from src.agent.state import PortfolioState, settle
 from src.agent.compliance import ComplianceContext, run_checks
@@ -19,11 +21,11 @@ def test_taiwan_markets_identify_same_stock():
     for market in ('TW', 'TWO'):
         h = pd.DataFrame([dict(etf_id='TEST', code='5483', name='TEST', market=market,
                                is_stock=True, weight_pct=10)])
-        b = etf_top10(h)['TEST']
+        b = etf_top_holdings(h)['TEST']
         assert list(b.index) == ['5483']
         assert active_share(pd.Series({'5483': .1}), b) == 0
         with pytest.raises(ValueError, match='重複'):
-            etf_top10(pd.concat([h, h]))
+            etf_top_holdings(pd.concat([h, h]))
 
 
 def test_parser_preserves_three_letter_market():
@@ -38,9 +40,9 @@ def test_recovery_exact_threshold_and_independent_etfs():
     b, dates = snapshot('2026-10-12')
     h = record_close([], '2026-10-12', {'5483': .1}, b, dates)
     code = next(iter(b))
-    b[code] = {'OTHER': .3}  # .5 * (.1 + .3) == .2，等於門檻不算低於
+    b[code] = {'OTHER': .25}  # .5 * (.05 + .25) == .15，等於門檻不算低於
     dates = {c: '2026-10-13' for c in b}
-    h = record_close(h, '2026-10-13', {'5483': .1}, b, dates)
+    h = record_close(h, '2026-10-13', {'5483': .05}, b, dates)
     assert h[-1]['etfs'][code]['estimated_breach_streak'] == 0
     assert all(row['estimated_breach_streak'] == 2 for c, row in h[-1]['etfs'].items() if c != code)
 
@@ -135,11 +137,11 @@ def test_store_rejects_partial_etf_file(tmp_path, monkeypatch):
 def test_live_preflight_checks_full_list_and_prior_risk(mock_run):
     trade_date, state, result = mock_run.days[1]
     day = mock_run.inputs.day(trade_date)
-    # 與當日委託預估相同的 top10，故 AS 為 0。
+    # 與當日委託預估相同的 top_holdings，故 AS 為 0。
     from src.agent.compliance import estimate_post_trade
     post, _, nav, _, _ = estimate_post_trade(state.holdings, state.cash, result.plan['orders'], day.close.to_dict())
     weights = {t: s * day.close[t] / nav for t, s in post.items()}
-    top = dict(sorted(weights.items(), key=lambda x: -x[1])[:10])
+    top = dict(sorted(weights.items(), key=lambda x: -x[1])[:rules.ACTIVE_SHARE_TOP_N])
     b = {code: top for code in EXPECTED_ETFS}
     dates = {code: day.data_date for code in b}
     state = copy.deepcopy(state)

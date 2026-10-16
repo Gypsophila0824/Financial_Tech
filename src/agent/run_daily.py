@@ -1,6 +1,6 @@
 """Daily Agent：單一交易日的完整決策管線，產出 D-Plan、合規報告、審核摘要與輸入包。
 
-流程：輸入（行情、量價與基本面因子、主動型 ETF 前十大、新聞）→ factor_engine 評分選股、配權重、
+流程：輸入（行情、量價與基本面因子、主動型 ETF 前十五大、新聞）→ factor_engine 評分選股、配權重、
       Active Share 控制 → 決策與現金規則 → 官方公式算委託 → 證據鏈（sources／observations）→
       推論文字（範本或 LLM 改寫）→ D-Plan → 合規檢查。
 

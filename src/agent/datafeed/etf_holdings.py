@@ -2,7 +2,7 @@
 
 輸出（data/etf/）：
   active_etf_holdings_<資料日期>.csv  全部持股（含期貨/現金等非個股列，is_stock 欄標記）
-  active_etf_top10_<資料日期>.csv     每檔 ETF 依權重排序的前 10 大「個股」
+  active_etf_top15_<資料日期>.csv     每檔 ETF 依權重排序的前 15 大「個股」
 
 抓取失敗的 ETF：沿用前一次檔案中該檔的持股（資料日期照舊標示），印出警告；
   沒有前一次資料可沿用時以 exit code 1 結束（Active Share 無法對 30 檔全部檢查，不可產出 D-Plan）。
@@ -16,6 +16,8 @@ import sys
 import time
 import urllib.request
 from pathlib import Path
+
+from .. import rules
 
 ETFS = [
     ("00980A", "主動野村臺灣優選"), ("00982A", "主動群益台灣強棒"), ("00981A", "主動統一台股成長"),
@@ -86,7 +88,7 @@ def previous_rows():
 
 
 def main():
-    all_rows, top10_rows, dates, failed, reused = [], [], set(), [], []
+    all_rows, top_rows, dates, failed, reused = [], [], set(), [], []
     prev = previous_rows()
     for etf_id, etf_name in ETFS:
         try:
@@ -105,10 +107,10 @@ def main():
         dates.add(date)
         for name, code, mkt, w, sh in rows:
             all_rows.append([etf_id, etf_name, date, code, mkt, name, w, sh, is_stock(name, code, mkt)])
-        stocks = sorted((r for r in rows if is_stock(*r[:3])), key=lambda r: -r[3])[:10]
+        stocks = sorted((r for r in rows if is_stock(*r[:3])), key=lambda r: -r[3])[:rules.ACTIVE_SHARE_TOP_N]
         for rank, (name, code, mkt, w, sh) in enumerate(stocks, 1):
-            top10_rows.append([etf_id, etf_name, date, rank, code, mkt, name, w])
-        print(f"{etf_id} {etf_name}: {date} 共 {len(rows)} 列，前10大個股合計 {sum(r[3] for r in stocks):.2f}%")
+            top_rows.append([etf_id, etf_name, date, rank, code, mkt, name, w])
+        print(f"{etf_id} {etf_name}: {date} 共 {len(rows)} 列，前{rules.ACTIVE_SHARE_TOP_N}大個股合計 {sum(r[3] for r in stocks):.2f}%")
         time.sleep(1)
 
     if failed:
@@ -120,10 +122,10 @@ def main():
         w = csv.writer(f)
         w.writerow(["etf_id", "etf_name", "data_date", "code", "market", "name", "weight_pct", "shares", "is_stock"])
         w.writerows(all_rows)
-    with open(OUT_DIR / f"active_etf_top10_{tag}.csv", "w", newline="", encoding="utf-8-sig") as f:
+    with open(OUT_DIR / f"active_etf_top{rules.ACTIVE_SHARE_TOP_N}_{tag}.csv", "w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
         w.writerow(["etf_id", "etf_name", "data_date", "rank", "code", "market", "name", "weight_pct"])
-        w.writerows(top10_rows)
+        w.writerows(top_rows)
     print(f"資料日期：{sorted(dates)}")
     if reused:
         print(f"⚠️  抓取失敗、沿用前次資料：{'、'.join(reused)}")

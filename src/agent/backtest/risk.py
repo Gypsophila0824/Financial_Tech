@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from .. import rules
-from ..active_share_risk import previous_session
+from ..active_share_risk import matches_current_rule, previous_session
 from ..state import PortfolioState
 
 
@@ -63,14 +63,16 @@ def active_share_status(state: PortfolioState, day: str) -> dict:
 
     ETF 持股披露較舊時仍保留 estimated streak，但不能冒充官方確認。
     """
-    current = next((row for row in state.active_share_history if row["date"] == day), None)
+    current = next((row for row in state.active_share_history
+                    if row["date"] == day and matches_current_rule(row)), None)
     if not current:
         return {"available": False, "confirmed_two_day_etfs": [], "estimated_two_day_etfs": []}
     prior = next((row for row in state.active_share_history
-                  if row["date"] == previous_session(day)), None)
+                  if row["date"] == previous_session(day) and matches_current_rule(row)), None)
     confirmed, estimated = [], []
     for code, row in current["etfs"].items():
-        if row["estimated_breach_streak"] >= 2:
+        if (prior and row["estimated_breach_streak"] >= 2
+                and prior["etfs"].get(code, {}).get("below_minimum")):
             estimated.append(code)
         if (prior and row["same_date_breach_streak"] >= 2
                 and prior["etfs"].get(code, {}).get("below_minimum")):
