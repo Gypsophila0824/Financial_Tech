@@ -112,12 +112,13 @@ class StoreInputs:
 
     is_mock = False
 
-    def __init__(self, history: bool = False, strict_history: bool = False):
+    def __init__(self, history: bool = False, strict_history: bool = False,
+                 ignore_etf_holdings: bool = False):
         self.history = history
-        # 正式回測必須避免以較晚日期的 ETF 持股回填早期日期。既有 replay
-        # 保持原行為（可使用最早一份資料彩排），但 strict_history=True 時寧可
-        # 略過資料不足的日期，也不可引入未來資訊。
+        # 正式回測只能使用資料日當天或更早的 ETF 快照；若有較早快照，
+        # 驗證器允許最多 366 日並留下日期警示。沒有任何前值時仍不得借用未來資料。
         self.strict_history = strict_history
+        self.ignore_etf_holdings = ignore_etf_holdings
         self.master = load_master()
         self._daily = None
 
@@ -212,7 +213,7 @@ class StoreInputs:
         for c in fund_factors.FACTORS:
             f[c] = pd.to_numeric(f[c])
             f[f"{c}_rank"] = fund_factors.pct_rank(f[c])
-        f["fund_score"] = f[[f"{c}_rank" for c in fund_factors.FACTORS]].mean(axis=1)
+        f["fund_score"] = fund_factors.production_score(f)
         avail = h["available_from"].max()
         sources = {"history": SourceSpec("src:fund_history", "mops", HISTORY_FUND_URL,
                                          f"公開資訊觀測站月營收、營益分析、財報（彩排：{data_date} 當時已公布者）",
@@ -233,6 +234,10 @@ class StoreInputs:
 
     # ---- 主動型 ETF 持股 ----
     def _benches(self, data_date: str, notes: list[str]):
+        if self.ignore_etf_holdings:
+            notes.append("研究比較模式：略過主動型 ETF 持股與 Active Share 約束")
+            self.etf_dates = {}
+            return {}, "bypassed_research_only"
         files = sorted(ETF_DIR.glob("active_etf_holdings_????-??-??.csv"))
         usable = [p for p in files if p.stem[-10:] <= data_date]
         if usable:
@@ -301,7 +306,7 @@ class MockInputs:
         for c in fund_factors.FACTORS:
             fund[c] = [rng.gauss(10, 20) for _ in tickers]
             fund[f"{c}_rank"] = fund_factors.pct_rank(fund[c])
-        fund["fund_score"] = fund[[f"{c}_rank" for c in fund_factors.FACTORS]].mean(axis=1)
+        fund["fund_score"] = fund_factors.production_score(fund)
         fund["rev_month"], fund["op_quarter"], fund["roe_quarter"], fund["rev_ytd_yoy"] = "2026-08", "2026Q2", "2026Q2", 5.0
         fund["roe_src"] = None
         self.fund = fund.round(4)

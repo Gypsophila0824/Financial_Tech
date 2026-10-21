@@ -12,9 +12,10 @@ import pandas as pd
 
 from .. import codeversion
 from ..inputs import DayInputs, SourceSpec
+from ..validation_outputs import VALIDATION_ROOT
 
 ROOT = Path(__file__).resolve().parents[3]
-OUTPUT_ROOT = ROOT / 'output' / 'backtest'
+OUTPUT_ROOT = VALIDATION_ROOT
 
 
 def json_bytes(value) -> bytes:

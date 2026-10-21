@@ -11,11 +11,13 @@ import pandas as pd
 
 from .shadow_quant import MODEL_VERSION, compute_shadow_ranking, read_news_snapshot
 from .metrics import selection_change
+from . import research_config as R
+from .datafeed.benchmark_prices import BENCHMARKS, fetch_prices
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_HOLDING_PERIODS = (5, 20, 60)
 VARIANTS = {
-    "baseline": ("baseline_technical_score", "baseline_research_score", "baseline_selected"),
+    "baseline": ("technical_score", "baseline_research_score", "baseline_selected"),
     "experiment": ("technical_score", "research_score", "selected"),
 }
 
@@ -182,10 +184,77 @@ def paired_evaluable_report(backtest: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def benchmark_comparison_report(paired: pd.DataFrame, prices: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Compare both strategies with price-only ETF returns on identical dates."""
+    usable = paired.loc[paired["both_complete"]].copy()
+    indexed = (prices.set_index(["ticker", "date"])["close"] if not prices.empty
+               else pd.Series(dtype=float))
+    rows = []
+    for item in usable.itertuples(index=False):
+        for ticker in BENCHMARKS:
+            start = indexed.get((ticker, item.as_of_date))
+            end = indexed.get((ticker, item.future_date))
+            value = float(end / start - 1) if pd.notna(start) and pd.notna(end) and start > 0 else None
+            reason = "" if value is not None else (
+                "missing_start_close" if pd.isna(start) else "missing_future_close")
+            rows.append({"as_of_date": item.as_of_date, "future_date": item.future_date,
+                         "holding_period_days": int(item.holding_period_days), "benchmark": ticker,
+                         "baseline_selected_return": item.baseline_selected_return,
+                         "experiment_selected_return": item.experiment_selected_return,
+                         "benchmark_price_return": value,
+                         "baseline_excess_vs_benchmark": (None if value is None else item.baseline_selected_return-value),
+                         "experiment_excess_vs_benchmark": (None if value is None else item.experiment_selected_return-value),
+                         "coverage_status": "complete" if value is not None else reason})
+    detail = pd.DataFrame(rows, columns=["as_of_date", "future_date", "holding_period_days", "benchmark",
+        "baseline_selected_return", "experiment_selected_return", "benchmark_price_return",
+        "baseline_excess_vs_benchmark", "experiment_excess_vs_benchmark", "coverage_status"])
+    summaries = []
+    periods = sorted(paired["holding_period_days"].dropna().astype(int).unique()) if not paired.empty else []
+    for period in periods:
+        for ticker in BENCHMARKS:
+            group = detail.loc[(detail["holding_period_days"] == period) & (detail["benchmark"] == ticker)]
+            valid = group.loc[group["benchmark_price_return"].notna()]
+            summaries.append({"holding_period_days": int(period), "benchmark": ticker,
+                "paired_dates": int(len(group)), "benchmark_covered_dates": int(len(valid)),
+                "baseline_mean_return": None if valid.empty else float(valid["baseline_selected_return"].mean()),
+                "experiment_mean_return": None if valid.empty else float(valid["experiment_selected_return"].mean()),
+                "benchmark_mean_price_return": None if valid.empty else float(valid["benchmark_price_return"].mean()),
+                "baseline_mean_excess": None if valid.empty else float(valid["baseline_excess_vs_benchmark"].mean()),
+                "experiment_mean_excess": None if valid.empty else float(valid["experiment_excess_vs_benchmark"].mean())})
+    return detail, pd.DataFrame(summaries)
+
+
+def research_report_markdown(summary: dict, benchmark_summary: pd.DataFrame) -> str:
+    baseline_weights = "/".join(f"{100*R.BASELINE_RESEARCH_WEIGHTS[k]:g}" for k in ("technical", "fundamental", "news"))
+    experiment_weights = "/".join(f"{100*R.EXPERIMENTAL_RESEARCH_WEIGHTS[k]:g}" for k in ("technical", "fundamental", "news"))
+    lines = ["# 研究線回測報告", "", f"- 模型版本：`{summary['model_version']}`",
+             f"- 範圍：全歷史行情；前瞻期間 {', '.join(str(x) for x in sorted(summary.get('periods', [])))} 日",
+             f"- 總分權重（量價／基本面／新聞）：對照 {baseline_weights}%；研究候選 {experiment_weights}%",
+             "- 本報告為訊號研究，不含成交、費稅或正式投組 NAV。", "",
+             "## 與 ETF 價格報酬比較", "",
+             "以下以相同排名日與前瞻終點計算策略入選股等權報酬及 ETF 收盤價報酬；區間重疊，樣本不是獨立觀測。ETF 僅計價格變動，不含配息與交易成本。", "",
+             "| 前瞻日 | 基準 | 有效配對／完整策略配對 | 對照策略平均 | 研究策略平均 | ETF 平均價格報酬 | 研究策略超額 |",
+             "|---:|---|---:|---:|---:|---:|---:|"]
+    if benchmark_summary.empty:
+        lines.append("| — | — | 0／— | — | — | — | — |")
+        lines += ["", "ETF 行情尚未取得；請檢查 benchmark_sources.json。缺少價格時不填零報酬。"]
+    else:
+        for row in benchmark_summary.itertuples(index=False):
+            fmt = lambda value: "—" if pd.isna(value) else f"{value:.2%}"
+            lines.append(f"| {row.holding_period_days} | {row.benchmark} | {row.benchmark_covered_dates}/{row.paired_dates} | "
+                         f"{fmt(row.baseline_mean_return)} | {fmt(row.experiment_mean_return)} | "
+                         f"{fmt(row.benchmark_mean_price_return)} | {fmt(row.experiment_mean_excess)} |")
+    counts = summary.get("coverage_disclosure", {}).get("integrity_status_counts", {})
+    lines += ["", "## 覆蓋與稽核", "",
+              f"研究紀錄完整 {counts.get('complete', 0)} 筆、排名不可用 {counts.get('ranking_unavailable', 0)} 筆、尚未成熟 {counts.get('not_mature', 0)} 筆、覆蓋不完整 {counts.get('partial_coverage', 0)} 筆。未成熟或缺值不轉成零報酬。",
+              "", "輸出包含 `benchmark_prices.csv`、`benchmark_sources.json`、`benchmark_comparison.csv` 與 `benchmark_summary.csv`，可追溯比較價格、來源網址及回應雜湊。", ""]
+    return "\n".join(lines)
+
+
 def summarize_backtest(backtest: pd.DataFrame, unavailable: list[str]) -> dict:
     summary = {"model_version": MODEL_VERSION, "ranking_unavailable_dates": unavailable, "records": int(len(backtest)),
                "strategy_scope": "訊號層控制實驗與完整性稽核，不是正式投組績效，不得用於下單或 D-Plan。",
-               "control_invariants": ["同一候選池與排名日", "同一基本面品質閘門", "同一正式新聞快照、截點、分數、權重與 A3 否決", "同一入選數與直接排名規則；研究線沒有正式續抱／配權／成本邏輯", "唯一可替換輸入為量價加權"],
+            "control_invariants": ["同一候選池與排名日", "同一基本面資料、品質閘門與基本面分數算法", "同一正式新聞快照、截點、分數與 A3 否決", "同一入選數與直接排名規則；研究線沒有正式續抱／配權／成本邏輯", "兩組唯一差異為研究總分中量價／基本面配重"],
                "by_holding_period": {}, "coverage_disclosure": {}}
     for (variant, period), group in backtest.groupby(["variant", "holding_period_days"]):
         complete = group.loc[group["integrity_status"] == "complete"]
@@ -246,22 +315,52 @@ def main() -> None:
     audit, report, unavailable = run_shadow_backtest(daily, selected_count=args.selected_count, holding_periods=periods,
         fundamental_loader=history.fundamental_for_date, news_loader=loader,
         formal_a3_loader=(lambda day: _formal_a3(daily, day)) if loader else None)
-    if any(not p.is_file() or hashlib.sha256(p.read_bytes()).hexdigest() != h for p, h in source_hashes.items()):
-        raise ValueError('研究執行中程式或資料已變更；不產出混合版本結果')
+    market_dates = _market_dates(daily)
+    benchmark_prices, benchmark_sources = fetch_prices(market_dates, ROOT / "output" / "benchmark_cache")
+    if not benchmark_prices.empty:
+        benchmark_prices = benchmark_prices.loc[
+            benchmark_prices["date"].between(market_dates[0], market_dates[-1])].copy()
+    paired = paired_evaluable_report(report)
+    benchmark_detail, benchmark_summary = benchmark_comparison_report(paired, benchmark_prices)
+    changed = [str(p) for p, h in source_hashes.items()
+               if not p.is_file() or hashlib.sha256(p.read_bytes()).hexdigest() != h]
+    if changed:
+        raise ValueError('研究執行中程式或資料已變更；不產出混合版本結果：' + ', '.join(changed))
+    for source in benchmark_sources:
+        cache_name = source.get("cache_file")
+        if cache_name:
+            raw = (ROOT / "output" / "benchmark_cache" / cache_name).read_bytes()
+            if hashlib.sha256(raw).hexdigest() != source.get("sha256"):
+                raise ValueError(f"ETF 基準原始回應雜湊不符：{cache_name}")
+            source["archived_file"] = f"benchmark_raw/{cache_name}"
     args.out_dir.mkdir(parents=True, exist_ok=False)
+    benchmark_raw_dir = args.out_dir / "benchmark_raw"
+    for source in benchmark_sources:
+        cache_name = source.get("cache_file")
+        if cache_name:
+            benchmark_raw_dir.mkdir(exist_ok=True)
+            raw = (ROOT / "output" / "benchmark_cache" / cache_name).read_bytes()
+            (benchmark_raw_dir / cache_name).write_bytes(raw)
     manifest = {'model_version': MODEL_VERSION, 'selected_count': args.selected_count,
                 'holding_periods': periods, 'strategy_scope': 'signal_only_no_formal_promotion',
+                'benchmarks': list(BENCHMARKS), 'benchmark_basis': 'TWSE daily close price return; excludes distributions and costs',
                 'hashes': {str(p): h for p, h in source_hashes.items()}}
     (args.out_dir / 'experiment_manifest.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding='utf-8')
     _write_csv(audit, args.out_dir / "research_ranking_audit.csv"); _write_csv(report, args.out_dir / "control_backtest_audit.csv")
     _write_csv(selected_difference_report(audit), args.out_dir / "selected_differences.csv")
-    _write_csv(paired_evaluable_report(report), args.out_dir / "paired_evaluable_comparison.csv")
+    _write_csv(paired, args.out_dir / "paired_evaluable_comparison.csv")
+    _write_csv(benchmark_prices, args.out_dir / "benchmark_prices.csv")
+    _write_csv(benchmark_detail, args.out_dir / "benchmark_comparison.csv")
+    _write_csv(benchmark_summary, args.out_dir / "benchmark_summary.csv")
+    (args.out_dir / "benchmark_sources.json").write_text(json.dumps(benchmark_sources, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     if args.production_ranking:
         production = pd.read_csv(args.production_ranking, dtype={'ticker': str})
         _write_csv(compare_rankings(audit, production, selected_count=args.selected_count),
                    args.out_dir / 'production_overlap.csv')
-    (args.out_dir / "research_summary.json").write_text(json.dumps(summarize_backtest(report, unavailable), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    print(f"研究控制實驗已寫出至 {args.out_dir}；僅訊號／完整性稽核，非正式投組績效")
+    summary = summarize_backtest(report, unavailable) | {"periods": periods, "benchmarks": list(BENCHMARKS)}
+    (args.out_dir / "research_summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    (args.out_dir / "report.md").write_text(research_report_markdown(summary, benchmark_summary), encoding="utf-8")
+    print(f"研究控制實驗已寫出至 {args.out_dir}；含三檔 ETF 價格基準比較，僅訊號研究，非正式投組績效")
 
 
 if __name__ == "__main__": main()

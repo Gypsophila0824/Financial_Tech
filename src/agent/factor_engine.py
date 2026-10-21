@@ -48,6 +48,8 @@ def active_share(ours: pd.Series, bench: pd.Series) -> float:
 
 def check_active_share(weights: pd.Series, benches: dict[str, pd.Series]) -> pd.DataFrame:
     """每檔 ETF 的 Active Share 與重疊股票，由低到高排序"""
+    if not benches:
+        return pd.DataFrame(columns=["active_share", "overlap"], index=pd.Index([], name="etf_id"))
     top = weights.sort_values(ascending=False).head(rules.ACTIVE_SHARE_TOP_N)
     rows = [{"etf_id": etf, "active_share": active_share(top, b), "overlap": " ".join(top.index.intersection(b.index))}
             for etf, b in benches.items()]
@@ -86,10 +88,13 @@ class Targets:
 
 
 def build_targets(master: pd.DataFrame, pv: pd.DataFrame, fund: pd.DataFrame, news: pd.DataFrame | None,
-                  held: list[str], benches: dict[str, pd.Series]) -> Targets:
+                  held: list[str], benches: dict[str, pd.Series], *,
+                  score_weights: dict[str, float] | None = None,
+                  buffer_rank: int | None = None,
+                  enforce_active_share: bool = True) -> Targets:
     if any(not f.index.is_unique for f in (master, pv, fund)) or (news is not None and not news.index.is_unique):
         raise ValueError('策略輸入有重複股票索引')
-    if not benches:
+    if enforce_active_share and not benches:
         raise ValueError('缺少 ETF 基準')
     if news is not None and not news.empty:
         scores = pd.to_numeric(news['news_score'], errors='raise')
@@ -101,18 +106,26 @@ def build_targets(master: pd.DataFrame, pv: pd.DataFrame, fund: pd.DataFrame, ne
         df = df.join(news[["news_score", "worst_event"]])
     else:
         df["news_score"], df["worst_event"] = S.NEUTRAL_SCORE, ""
-    cols = list(S.SCORE_WEIGHTS)
+    weights = S.SCORE_WEIGHTS if score_weights is None else score_weights
+    if (set(weights) != {"pv_score", "fund_score", "news_score"}
+            or any(not math.isfinite(v) or v < 0 for v in weights.values())
+            or abs(sum(weights.values()) - 1.0) > 1e-12):
+        raise ValueError('分數權重必須是量價／基本面／新聞三項且合計 100%')
+    cols = list(weights)
     df[cols] = df[cols].fillna(S.NEUTRAL_SCORE)
     df["worst_event"] = df["worst_event"].fillna("")
     if (df['worst_event'].str.startswith(f'{S.VETO_MATERIALITY}:') & df['A3'].isna()).any():
         raise ValueError('重大利空缺少正式 A3；不得默默解除否決')
     df["veto"] = news_veto(df["worst_event"], df["A3"])
-    df["total_score"] = sum(df[c] * w for c, w in S.SCORE_WEIGHTS.items())
+    df["total_score"] = sum(df[c] * w for c, w in weights.items())
     df = df.sort_values("total_score", ascending=False)
     df["rank"] = range(1, len(df) + 1)
 
     # 換股緩衝：已持有者仍在前 BUFFER_RANK 名就續抱；重大利空否決者不買進、已持有者不受緩衝保護
-    kept = [t for t in df.index if t in held and df.loc[t, "rank"] <= S.BUFFER_RANK and not df.loc[t, "veto"]]
+    effective_buffer = S.BUFFER_RANK if buffer_rank is None else buffer_rank
+    if type(effective_buffer) is not int or effective_buffer < S.N_HOLDINGS:
+        raise ValueError('續抱排名須為不小於目標持股數的整數')
+    kept = [t for t in df.index if t in held and df.loc[t, "rank"] <= effective_buffer and not df.loc[t, "veto"]]
     new = [t for t in df.index if t not in kept and not df.loc[t, "veto"]][: max(S.N_HOLDINGS - len(kept), 0)]
     vetoed = df[df["veto"]].copy()
     vetoed["held"] = [t in held for t in vetoed.index]
@@ -129,23 +142,27 @@ def build_targets(master: pd.DataFrame, pv: pd.DataFrame, fund: pd.DataFrame, ne
         caps[rules.TSMC] = S.CAP_2330
 
     adjustments = []
-    for _ in range(S.MAX_AS_ITERATIONS):
-        weights = cap_weights(raw_weight, caps, 1 - S.TARGET_CASH)
-        report = check_active_share(weights, benches)
-        worst = report.iloc[0]
-        if worst["active_share"] >= S.AS_THRESHOLD:
-            break
-        top = weights.sort_values(ascending=False).head(rules.ACTIVE_SHARE_TOP_N)
-        b = benches[worst.name]
-        shared = top.index.intersection(b.index)
-        if shared.empty:
-            raise RuntimeError(f"{worst.name} 與我方前 15 大沒有重疊，Active Share 仍只有 {worst['active_share']:.1%}")
-        target = max(shared, key=lambda t: min(top[t], b[t]))
-        # 從「目前權重」往下調，而非從上限往下調
-        caps[target] = max(min(caps[target], weights[target]) - 0.01, 0.005)
-        adjustments.append(f"{target} 上限調降至 {caps[target]:.1%}（因 {worst.name} 僅 {worst['active_share']:.1%}）")
+    if enforce_active_share:
+        for _ in range(S.MAX_AS_ITERATIONS):
+            weights = cap_weights(raw_weight, caps, 1 - S.TARGET_CASH)
+            report = check_active_share(weights, benches)
+            worst = report.iloc[0]
+            if worst["active_share"] >= S.AS_THRESHOLD:
+                break
+            top = weights.sort_values(ascending=False).head(rules.ACTIVE_SHARE_TOP_N)
+            b = benches[worst.name]
+            shared = top.index.intersection(b.index)
+            if shared.empty:
+                raise RuntimeError(f"{worst.name} 與我方前 15 大沒有重疊，Active Share 仍只有 {worst['active_share']:.1%}")
+            target = max(shared, key=lambda t: min(top[t], b[t]))
+            # 從「目前權重」往下調，而非從上限往下調
+            caps[target] = max(min(caps[target], weights[target]) - 0.01, 0.005)
+            adjustments.append(f"{target} 上限調降至 {caps[target]:.1%}（因 {worst.name} 僅 {worst['active_share']:.1%}）")
+        else:
+            raise RuntimeError(f"調整 {S.MAX_AS_ITERATIONS} 次仍無法讓 Active Share 全部 ≥ {S.AS_THRESHOLD:.0%}")
     else:
-        raise RuntimeError(f"調整 {S.MAX_AS_ITERATIONS} 次仍無法讓 Active Share 全部 ≥ {S.AS_THRESHOLD:.0%}")
+        weights = cap_weights(raw_weight, caps, 1 - S.TARGET_CASH)
+        report = check_active_share(weights, {})
 
     # 目標權重取 4 位小數：組員管線經 CSV 存檔（round(4)）後才下單，回測亦同；保持一致，
     # 否則落在「四捨五入到最接近整張」邊界的股票會差一張（10/02 驗收時 6770 差 1 張）
@@ -213,7 +230,12 @@ class TradePlan:
 
 
 def plan_trades(picks: pd.DataFrame, holdings: dict[str, int], cash: Decimal, nav: Decimal, close: pd.Series,
-                tradable: set[str], benches: dict[str, pd.Series], as_of: str) -> TradePlan:
+                tradable: set[str], benches: dict[str, pd.Series], as_of: str,
+                no_trade_band: float | None = None,
+                enforce_active_share: bool = True) -> TradePlan:
+    band = S.NO_TRADE_BAND if no_trade_band is None else no_trade_band
+    if not math.isfinite(band) or not 0 <= band <= 1:
+        raise ValueError('無交易帶須介於 0–100%')
     navf = float(nav)
     decisions, no_trades, skipped, band_under, band_over = [], [], [], [], []
     for t in list(picks.index) + [t for t in holdings if t not in picks.index]:
@@ -229,9 +251,11 @@ def plan_trades(picks: pd.DataFrame, holdings: dict[str, int], cash: Decimal, na
             skipped.append(f"{t} {as_of} 無成交（可能暫停交易），不建倉")
             continue
         # 超過權重上限緩衝（多為股價上漲被動超限）時不適用無交易帶，一定減碼回目標（辦法註 3）
-        if cur and t in picks.index and abs(w - cur_w) < S.NO_TRADE_BAND and cur_w <= limit:
-            no_trades.append({"ticker": t, "why": f"目前權重 {cur_w:.2%}，與目標 {w:.2%} 偏離小於 "
-                                                   f"{S.NO_TRADE_BAND:.0%} 無交易帶"})
+        within_band = abs(w - cur_w) <= band
+        if cur and t in picks.index and within_band and cur_w <= limit:
+            band_rule = f"{band:.0%} 以內無交易帶"
+            explanation = (f"目前權重 {cur_w:.2%}，與目標 {w:.2%} 偏離 {abs(w-cur_w):.2%}，符合 {band_rule}")
+            no_trades.append({"ticker": t, "why": explanation})
             if w > cur_w:
                 band_under.append((w - cur_w, t, cur, price, w))
             elif cur_w > w:
@@ -292,22 +316,23 @@ def plan_trades(picks: pd.DataFrame, holdings: dict[str, int], cash: Decimal, na
         return pd.Series({t: s * float(close[t]) / navf for t, s in after.items() if s > 0}, dtype=float)
 
     as_fixed = []
-    for _ in range(len(in_band) + 1):
-        weights = post_trade_weights()
-        as_report = check_active_share(weights, benches)
-        worst = as_report.iloc[0]
-        if worst["active_share"] >= S.POST_AS_THRESHOLD:
-            break
-        overlap = weights.nlargest(rules.ACTIVE_SHARE_TOP_N).index.intersection(benches[worst.name].index)
-        decided = {x["ticker"] for x in decisions}
-        cands = [t for t in overlap if t in in_band and t not in decided and weights[t] > in_band[t][2]]
-        if not cands:
-            break
-        t = max(cands, key=lambda t: weights[t] - in_band[t][2])
-        if force_to_target(t, *in_band[t]):
-            as_fixed.append(t)
-        else:
-            in_band.pop(t)
+    if enforce_active_share:
+        for _ in range(len(in_band) + 1):
+            weights = post_trade_weights()
+            as_report = check_active_share(weights, benches)
+            worst = as_report.iloc[0]
+            if worst["active_share"] >= S.POST_AS_THRESHOLD:
+                break
+            overlap = weights.nlargest(rules.ACTIVE_SHARE_TOP_N).index.intersection(benches[worst.name].index)
+            decided = {x["ticker"] for x in decisions}
+            cands = [t for t in overlap if t in in_band and t not in decided and weights[t] > in_band[t][2]]
+            if not cands:
+                break
+            t = max(cands, key=lambda t: weights[t] - in_band[t][2])
+            if force_to_target(t, *in_band[t]):
+                as_fixed.append(t)
+            else:
+                in_band.pop(t)
 
     # 守住現金下限：估算現金低於下限時逐張少買（新建倉至少 1 張、加碼至少比現有多 1 張）
     trimmed = 0
@@ -347,7 +372,7 @@ def plan_trades(picks: pd.DataFrame, holdings: dict[str, int], cash: Decimal, na
         floor = cash_floor(buy, sell, nav)
 
     # posture 由委託總效果決定（C12 一致）：|淨買賣| ≤ 2% 淨值 → hold，否則 increase／reduce
-    as_report = check_active_share(post_trade_weights(), benches)
+    as_report = check_active_share(post_trade_weights(), benches) if enforce_active_share else check_active_share(pd.Series(dtype=float), {})
     cash_pct = float(cash_after / nav)
     net = float((buy - sell) / nav)
     intent = "hold" if abs(net) <= rules.HOLD_NET_FLOW_TOLERANCE else "increase" if net > 0 else "reduce"

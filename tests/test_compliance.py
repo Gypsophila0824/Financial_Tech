@@ -48,16 +48,16 @@ def test_every_mock_day_passes(mock_run):
 
 def test_c1_dangling_reference(mock_run):
     """反例 043 ①：決策引用不存在的推論"""
-    plan = plan_of(mock_run, BUSY)
+    plan = plan_of(mock_run, 0)
     plan["decisions"][0]["inference_refs"] = ["I999"]
-    assert "C1 引用完整（無孤兒）" in rejected(run_checks(plan, context(mock_run, BUSY)))
+    assert "C1 引用完整（無孤兒）" in rejected(run_checks(plan, context(mock_run, 0)))
 
 
 def test_c2_order_not_formula(mock_run):
     """反例 043 ②：委託股數不等於官方公式"""
-    plan = plan_of(mock_run, BUSY)
+    plan = plan_of(mock_run, 0)
     plan["orders"][0]["shares"] += 1000
-    assert "C2 委託逐筆等於官方公式" in rejected(run_checks(plan, context(mock_run, BUSY)))
+    assert "C2 委託逐筆等於官方公式" in rejected(run_checks(plan, context(mock_run, 0)))
 
 
 def test_c12_posture_contradiction(mock_run):
@@ -70,12 +70,11 @@ def test_c12_posture_contradiction(mock_run):
 
 
 def test_c13_oversell(mock_run):
-    plan = plan_of(mock_run, BUSY)
-    held = mock_run.days[BUSY][1].holdings
-    t = next(iter(held))
-    plan["orders"].append({"ticker": t, "side": "SELL", "shares": held[t] + 1000,
+    plan = plan_of(mock_run, 0)
+    t = plan["orders"][0]["ticker"]
+    plan["orders"].append({"ticker": t, "side": "SELL", "shares": 1000,
                            "decision_ref": plan["decisions"][0]["decision_id"]})
-    assert "C13 賣出不超過持股" in rejected(run_checks(plan, context(mock_run, BUSY)))
+    assert "C13 賣出不超過持股" in rejected(run_checks(plan, context(mock_run, 0)))
 
 
 def test_every_holding_must_be_explained(mock_run):
@@ -99,9 +98,9 @@ def test_holdings_count_below_20(mock_run):
 
 
 def test_outside_universe(mock_run):
-    plan = plan_of(mock_run, BUSY)
+    plan = plan_of(mock_run, 0)
     plan["decisions"][0]["ticker"] = "9999"
-    assert "六(七) 僅限 150 檔" in rejected(run_checks(plan, context(mock_run, BUSY)))
+    assert "六(七) 僅限 150 檔" in rejected(run_checks(plan, context(mock_run, 0)))
 
 
 def test_filename(mock_run):
@@ -119,7 +118,7 @@ def test_submit_window(mock_run):
 
 
 def test_window_is_previous_calendar_day():
-    """簡章範例：10/26 的繳交時間為 10/25 19:30～10/26 08:55；首次繳交（10/27 交易日）自 10/26 19:30 起"""
+    """10/05 更新版正文範例：10/27 報告時窗為 10/26 19:30～10/27 08:55"""
     from datetime import date, timedelta, timezone
     open_, close_ = submit_window(date(2026, 10, 27), timezone(timedelta(hours=8)))
     assert (open_.isoformat(), close_.isoformat()) == ("2026-10-26T19:30:00+08:00", "2026-10-27T08:55:00+08:00")

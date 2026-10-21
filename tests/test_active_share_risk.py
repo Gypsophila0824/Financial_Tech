@@ -17,6 +17,19 @@ def snapshot(day='2026-10-13'):
     return ({code: {'5483': .1} for code in EXPECTED_ETFS}, {code: day for code in EXPECTED_ETFS})
 
 
+def test_numpy_close_observation_can_be_saved(tmp_path):
+    import numpy as np
+    b, dates = snapshot()
+    state = PortfolioState.initial()
+    state.active_share_history = record_close([], '2026-10-13', {'5483': np.float64(.1)}, b, dates)
+    path = tmp_path / 'state.json'
+    state.save(path)
+    restored = PortfolioState.load(path)
+    row = next(iter(restored.active_share_history[-1]['etfs'].values()))
+    assert type(row['below_minimum']) is bool
+    assert type(row['active_share']) is float
+
+
 def test_taiwan_markets_identify_same_stock():
     for market in ('TW', 'TWO'):
         h = pd.DataFrame([dict(etf_id='TEST', code='5483', name='TEST', market=market,
@@ -72,6 +85,17 @@ def test_benchmark_coverage_and_dates():
     del b[code]
     with pytest.raises(ValueError, match='清單不完整'):
         validate_benchmarks(b, dates, '2026-10-13')
+
+
+def test_prior_year_benchmark_snapshot_is_allowed_with_one_year_limit():
+    from src.agent.active_share_risk import MAX_ETF_SNAPSHOT_AGE_DAYS
+    b, dates = snapshot('2025-10-13')
+    cutoff = (pd.Timestamp('2025-10-13') + pd.Timedelta(days=MAX_ETF_SNAPSHOT_AGE_DAYS)).date().isoformat()
+    notes = validate_benchmarks(b, dates, cutoff)
+    assert any('沿用最近已公布快照' in note for note in notes)
+    cutoff = (pd.Timestamp('2025-10-13') + pd.Timedelta(days=MAX_ETF_SNAPSHOT_AGE_DAYS + 1)).date().isoformat()
+    with pytest.raises(ValueError, match='超過允許'):
+        validate_benchmarks(b, dates, cutoff)
 
 
 @pytest.mark.parametrize('weight', [float('nan'), float('inf'), -0.1, 1.1])

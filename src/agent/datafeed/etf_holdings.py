@@ -11,10 +11,14 @@
 執行 : python fetch_active_etf_holdings.py
 """
 import csv
+import json
 import re
+import shutil
 import sys
+import tempfile
 import time
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 
 from .. import rules
@@ -87,22 +91,62 @@ def previous_rows():
     return prev
 
 
-def main():
-    all_rows, top_rows, dates, failed, reused = [], [], set(), [], []
+def _save_snapshot(tag: str, all_rows: list[list], top_rows: list[list], *, complete: bool) -> list[str]:
+    """完整快照使用既有可讀檔名；不完整抓取另存 .partial，避免被回測誤讀。"""
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    suffix = "" if complete else ".partial"
+    holdings_path = OUT_DIR / f"active_etf_holdings_{tag}{suffix}.csv"
+    top_path = OUT_DIR / f"active_etf_top{rules.ACTIVE_SHARE_TOP_N}_{tag}{suffix}.csv"
+    outputs = [(holdings_path,
+                ["etf_id", "etf_name", "data_date", "code", "market", "name", "weight_pct", "shares", "is_stock"], all_rows),
+               (top_path,
+                ["etf_id", "etf_name", "data_date", "rank", "code", "market", "name", "weight_pct"], top_rows)]
+    saved = []
+    for path, header, rows in outputs:
+        if path.exists() and complete:
+            archive_dir = OUT_DIR / "archive"
+            archive_dir.mkdir(parents=True, exist_ok=True)
+            stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+            backup = archive_dir / f"{path.stem}_{stamp}{path.suffix}"
+            shutil.copy2(path, backup)
+        fd, temp_name = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=OUT_DIR)
+        try:
+            with open(fd, "w", newline="", encoding="utf-8-sig", closefd=True) as f:
+                w = csv.writer(f)
+                w.writerow(header)
+                w.writerows(rows)
+            Path(temp_name).replace(path)
+        finally:
+            Path(temp_name).unlink(missing_ok=True)
+        saved.append(str(path))
+    return saved
+
+
+def refresh() -> dict:
+    """抓取最新披露；歷史日期保留來源日期，不將新持股回填到過去。"""
+    all_rows, top_rows, dates, failed, reused, fetch_failures = [], [], set(), [], [], []
+    errors = {}
     prev = previous_rows()
     for etf_id, etf_name in ETFS:
         try:
             date, rows = parse(fetch(etf_id))
+            if rows and not date:
+                raise ValueError("持股資料缺少有效資料日期")
         except Exception as e:  # 網路錯誤：記錄後繼續
             date, rows = None, []
+            errors[etf_id] = str(e)
             print(f"{etf_id} 抓取失敗：{e}", file=sys.stderr)
+        if not rows:
+            fetch_failures.append({"etf_id": etf_id, "error": errors.get(etf_id, "來源未回傳持股資料"),
+                                   "reused_data_date": prev[etf_id][0][5] if prev.get(etf_id) else None})
         if not rows and prev.get(etf_id):
             date = prev[etf_id][0][5]
             rows = [r[:5] for r in prev[etf_id]]
             reused.append(f"{etf_id}（{date}）")
         if not rows:
-            failed.append(etf_id)
-            print(f"{etf_id} {etf_name}: 無資料", file=sys.stderr)
+            failed.append({"etf_id": etf_id, "etf_name": etf_name,
+                           "date": date, "error": errors.get(etf_id, "來源未回傳持股資料")})
+            print(f"{etf_id} {etf_name}: 無資料（缺漏日期：未取得）", file=sys.stderr)
             continue
         dates.add(date)
         for name, code, mkt, w, sh in rows:
@@ -113,22 +157,30 @@ def main():
         print(f"{etf_id} {etf_name}: {date} 共 {len(rows)} 列，前{rules.ACTIVE_SHARE_TOP_N}大個股合計 {sum(r[3] for r in stocks):.2f}%")
         time.sleep(1)
 
-    if failed:
-        sys.exit(f"❌ {len(failed)} 檔 ETF 抓取失敗且無前次資料可沿用：{'、'.join(failed)}；"
-                 "Active Share 無法完整檢查，已停止")
-    tag = max(dates)
+    complete = not failed
+    saved = _save_snapshot(max(dates), all_rows, top_rows, complete=complete) if dates else []
+    result = {"complete": complete, "expected_etfs": [code for code, _ in ETFS],
+              "observed_dates": sorted(dates), "reused_previous": reused,
+              "fetch_failures": fetch_failures, "missing": failed, "saved_files": saved,
+              "active_snapshot_written": complete,
+              "updated_at": datetime.now(timezone.utc).isoformat()}
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    with open(OUT_DIR / f"active_etf_holdings_{tag}.csv", "w", newline="", encoding="utf-8-sig") as f:
-        w = csv.writer(f)
-        w.writerow(["etf_id", "etf_name", "data_date", "code", "market", "name", "weight_pct", "shares", "is_stock"])
-        w.writerows(all_rows)
-    with open(OUT_DIR / f"active_etf_top{rules.ACTIVE_SHARE_TOP_N}_{tag}.csv", "w", newline="", encoding="utf-8-sig") as f:
-        w = csv.writer(f)
-        w.writerow(["etf_id", "etf_name", "data_date", "rank", "code", "market", "name", "weight_pct"])
-        w.writerows(top_rows)
+    report = OUT_DIR / ("active_etf_update_" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ") + ".json")
+    result["report_file"] = str(report)
+    report.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"資料日期：{sorted(dates)}")
     if reused:
         print(f"⚠️  抓取失敗、沿用前次資料：{'、'.join(reused)}")
+    if failed:
+        print("❌ ETF 持股快照不完整；成功資料已另存 .partial 診斷檔，不會作為回測快照。缺漏：" +
+              "、".join(f"{item['etf_id']}（{item['date'] or '日期未知'}）" for item in failed), file=sys.stderr)
+    return result
+
+
+def main():
+    result = refresh()
+    if not result["complete"]:
+        sys.exit(f"❌ ETF 快照不完整；詳見 {result['report_file']}。研究回測會依嚴格歷史輸入規則處理缺漏。")
 
 
 if __name__ == "__main__":

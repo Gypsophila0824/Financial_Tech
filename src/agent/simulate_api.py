@@ -2,7 +2,7 @@
 
   模擬資料：.venv/Scripts/python.exe -X utf8 -m src.agent.simulate --days 5 --reset
   真實歷史資料彩排：.venv/Scripts/python.exe -X utf8 -m src.agent.simulate --data real --start 2026-09-15 --days 10 --reset
-輸出：output/mock/ 或 output/replay/（D-Plan、合規報告、審核摘要、輸入包、帳本 state.json）。兩種都不可提交。
+輸出：output/validation/ 下的獨立執行目錄（D-Plan、合規報告、審核摘要、輸入包、帳本 state.json）。兩種都不可提交。
 彩排的基本面依 fund_history.csv 還原當時已公布者；新聞無歷史資料，分數為中性。
 """
 
@@ -19,6 +19,7 @@ from .llm_reasoner import LLMReasoner
 from .tools import news_scoring as NS
 from .run_daily import run_day
 from .state import PortfolioState, settle
+from .validation_outputs import VALIDATION_ROOT, dated_run_name, update_index
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -34,10 +35,12 @@ def main() -> None:
 
     inputs, mode = (StoreInputs(history=True), "replay") if args.data == "real" else (MockInputs(), "mock")
     out = (
-        ROOT / "output" / "replay_api"
-        / datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        VALIDATION_ROOT / "replay_api"
+        / dated_run_name('period', args.start,
+                         (lambda ds: ds[-1] if ds else args.start)([d for d in inputs.dates() if d >= args.start][:args.days]))
     )
     out.mkdir(parents=True, exist_ok=True)
+    update_index()
     state_path = out / "state.json"
     if args.reset and state_path.exists():
         state_path.unlink()

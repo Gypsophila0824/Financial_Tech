@@ -1,0 +1,49 @@
+{
+  "complete": true,
+  "expected_etfs": [
+    "00980A",
+    "00982A",
+    "00981A",
+    "00983A",
+    "00984A",
+    "00985A",
+    "00986A",
+    "00989A",
+    "00988A",
+    "00991A",
+    "00990A",
+    "00987A",
+    "00992A",
+    "00994A",
+    "00995A",
+    "00993A",
+    "00996A",
+    "00400A",
+    "00401A",
+    "00997A",
+    "00999A",
+    "00403A",
+    "00402A",
+    "00404A",
+    "00405A",
+    "00406A",
+    "00407A",
+    "00408A",
+    "00410A",
+    "00409A"
+  ],
+  "observed_dates": [
+    "2026-10-19",
+    "2026-10-20"
+  ],
+  "reused_previous": [],
+  "fetch_failures": [],
+  "missing": [],
+  "saved_files": [
+    "C:\\Users\\jessi\\OneDrive\\文件\\ChatGPT\\金融科技\\Financial_Tech\\data\\etf\\active_etf_holdings_2026-10-20.csv",
+    "C:\\Users\\jessi\\OneDrive\\文件\\ChatGPT\\金融科技\\Financial_Tech\\data\\etf\\active_etf_top15_2026-10-20.csv"
+  ],
+  "active_snapshot_written": true,
+  "updated_at": "2026-10-21T11:06:09.750959+00:00",
+  "report_file": "C:\\Users\\jessi\\OneDrive\\文件\\ChatGPT\\金融科技\\Financial_Tech\\data\\etf\\active_etf_update_20261021T110609751962Z.json"
+}

@@ -195,3 +195,17 @@ def test_replay_cli_and_external_master_not_used(data, tmp_path, monkeypatch):
     runner.main()
     assert json.loads((replay_path / 'summary.json').read_text(encoding='utf-8'))['replay_verified']
     archive.verify_archive(replay_path)
+
+
+def test_report_exports_daily_risk_and_per_etf_active_share(data, tmp_path, monkeypatch):
+    result = run_formal_backtest(data, start='2026-10-27', days=1)
+    out = tmp_path / 'allowed' / 'risk-report'
+    monkeypatch.setattr(archive, 'OUTPUT_ROOT', tmp_path / 'allowed')
+    write_result(result, out, config={})
+    details = pd.read_csv(out / 'active_share_detail.csv', dtype={'etf_id': str})
+    assert {'date', 'etf_id', 'active_share', 'etf_snapshot_date', 'snapshot_age_trading_days'} <= set(details.columns)
+    assert len(details) == len(data.benches)
+    assert set(details['snapshot_age_trading_days']) == {1}
+    report = (out / 'report.md').read_text(encoding='utf-8')
+    assert '## 每日持倉與風險' in report
+    assert '現金比' in report and '最低 Active Share' in report

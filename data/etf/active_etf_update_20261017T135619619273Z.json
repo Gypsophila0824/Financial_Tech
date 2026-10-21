@@ -1,0 +1,232 @@
+{
+  "complete": true,
+  "expected_etfs": [
+    "00980A",
+    "00982A",
+    "00981A",
+    "00983A",
+    "00984A",
+    "00985A",
+    "00986A",
+    "00989A",
+    "00988A",
+    "00991A",
+    "00990A",
+    "00987A",
+    "00992A",
+    "00994A",
+    "00995A",
+    "00993A",
+    "00996A",
+    "00400A",
+    "00401A",
+    "00997A",
+    "00999A",
+    "00403A",
+    "00402A",
+    "00404A",
+    "00405A",
+    "00406A",
+    "00407A",
+    "00408A",
+    "00410A",
+    "00409A"
+  ],
+  "observed_dates": [
+    "2026-10-08",
+    "2026-10-12",
+    "2026-10-13"
+  ],
+  "reused_previous": [
+    "00980A（2026-10-13）",
+    "00982A（2026-10-13）",
+    "00981A（2026-10-12）",
+    "00983A（2026-10-08）",
+    "00984A（2026-10-12）",
+    "00985A（2026-10-13）",
+    "00986A（2026-10-12）",
+    "00989A（2026-10-08）",
+    "00988A（2026-10-12）",
+    "00991A（2026-10-13）",
+    "00990A（2026-10-08）",
+    "00987A（2026-10-13）",
+    "00992A（2026-10-13）",
+    "00994A（2026-10-13）",
+    "00995A（2026-10-13）",
+    "00993A（2026-10-12）",
+    "00996A（2026-10-13）",
+    "00400A（2026-10-13）",
+    "00401A（2026-10-13）",
+    "00997A（2026-10-12）",
+    "00999A（2026-10-13）",
+    "00403A（2026-10-13）",
+    "00402A（2026-10-12）",
+    "00404A（2026-10-12）",
+    "00405A（2026-10-13）",
+    "00406A（2026-10-12）",
+    "00407A（2026-10-13）",
+    "00408A（2026-10-13）",
+    "00410A（2026-10-13）",
+    "00409A（2026-10-12）"
+  ],
+  "fetch_failures": [
+    {
+      "etf_id": "00980A",
+      "error": "<urlopen error [Errno 11001] getaddrinfo failed>",
+      "reused_data_date": "2026-10-13"
+    },
+    {
+      "etf_id": "00982A",
+      "error": "<urlopen error [Errno 11001] getaddrinfo failed>",
+      "reused_data_date": "2026-10-13"
+    },
+    {
+      "etf_id": "00981A",
+      "error": "<urlopen error [Errno 11001] getaddrinfo failed>",
+      "reused_data_date": "2026-10-12"
+    },
+    {
+      "etf_id": "00983A",
+      "error": "<urlopen error [Errno 11001] getaddrinfo failed>",
+      "reused_data_date": "2026-10-08"
+    },
+    {
+      "etf_id": "00984A",
+      "error": "<urlopen error [Errno 11001] getaddrinfo failed>",
+      "reused_data_date": "2026-10-12"
+    },
+    {
+      "etf_id": "00985A",
+      "error": "<urlopen error [Errno 11001] getaddrinfo failed>",
+      "reused_data_date": "2026-10-13"
+    },
+    {
+      "etf_id": "00986A",
+      "error": "<urlopen error [Errno 11001] getaddrinfo failed>",
+      "reused_data_date": "2026-10-12"
+    },
+    {
+      "etf_id": "00989A",
+      "error": "<urlopen error [Errno 11001] getaddrinfo failed>",
+      "reused_data_date": "2026-10-08"
+    },
+    {
+      "etf_id": "00988A",
+      "error": "<urlopen error [Errno 11001] getaddrinfo failed>",
+      "reused_data_date": "2026-10-12"
+    },
+    {
+      "etf_id": "00991A",
+      "error": "<urlopen error [Errno 11001] getaddrinfo failed>",
+      "reused_data_date": "2026-10-13"
+    },
+    {
+      "etf_id": "00990A",
+      "error": "<urlopen error [Errno 11001] getaddrinfo failed>",
+      "reused_data_date": "2026-10-08"
+    },
+    {
+      "etf_id": "00987A",
+      "error": "<urlopen error [Errno 11001] getaddrinfo failed>",
+      "reused_data_date": "2026-10-13"
+    },
+    {
+      "etf_id": "00992A",
+      "error": "<urlopen error [Errno 11001] getaddrinfo failed>",
+      "reused_data_date": "2026-10-13"
+    },
+    {
+      "etf_id": "00994A",
+      "error": "<urlopen error [Errno 11001] getaddrinfo failed>",
+      "reused_data_date": "2026-10-13"
+    },
+    {
+      "etf_id": "00995A",
+      "error": "<urlopen error [Errno 11001] getaddrinfo failed>",
+      "reused_data_date": "2026-10-13"
+    },
+    {
+      "etf_id": "00993A",
+      "error": "<urlopen error [Errno 11001] getaddrinfo failed>",
+      "reused_data_date": "2026-10-12"
+    },
+    {
+      "etf_id": "00996A",
+      "error": "<urlopen error [Errno 11001] getaddrinfo failed>",
+      "reused_data_date": "2026-10-13"
+    },
+    {
+      "etf_id": "00400A",
+      "error": "<urlopen error [Errno 11001] getaddrinfo failed>",
+      "reused_data_date": "2026-10-13"
+    },
+    {
+      "etf_id": "00401A",
+      "error": "<urlopen error [Errno 11001] getaddrinfo failed>",
+      "reused_data_date": "2026-10-13"
+    },
+    {
+      "etf_id": "00997A",
+      "error": "<urlopen error [Errno 11001] getaddrinfo failed>",
+      "reused_data_date": "2026-10-12"
+    },
+    {
+      "etf_id": "00999A",
+      "error": "<urlopen error [Errno 11001] getaddrinfo failed>",
+      "reused_data_date": "2026-10-13"
+    },
+    {
+      "etf_id": "00403A",
+      "error": "<urlopen error [Errno 11001] getaddrinfo failed>",
+      "reused_data_date": "2026-10-13"
+    },
+    {
+      "etf_id": "00402A",
+      "error": "<urlopen error [Errno 11001] getaddrinfo failed>",
+      "reused_data_date": "2026-10-12"
+    },
+    {
+      "etf_id": "00404A",
+      "error": "<urlopen error [Errno 11001] getaddrinfo failed>",
+      "reused_data_date": "2026-10-12"
+    },
+    {
+      "etf_id": "00405A",
+      "error": "<urlopen error [Errno 11001] getaddrinfo failed>",
+      "reused_data_date": "2026-10-13"
+    },
+    {
+      "etf_id": "00406A",
+      "error": "<urlopen error [Errno 11001] getaddrinfo failed>",
+      "reused_data_date": "2026-10-12"
+    },
+    {
+      "etf_id": "00407A",
+      "error": "<urlopen error [Errno 11001] getaddrinfo failed>",
+      "reused_data_date": "2026-10-13"
+    },
+    {
+      "etf_id": "00408A",
+      "error": "<urlopen error [Errno 11001] getaddrinfo failed>",
+      "reused_data_date": "2026-10-13"
+    },
+    {
+      "etf_id": "00410A",
+      "error": "<urlopen error [Errno 11001] getaddrinfo failed>",
+      "reused_data_date": "2026-10-13"
+    },
+    {
+      "etf_id": "00409A",
+      "error": "<urlopen error [Errno 11001] getaddrinfo failed>",
+      "reused_data_date": "2026-10-12"
+    }
+  ],
+  "missing": [],
+  "saved_files": [
+    "C:\\Users\\jessi\\OneDrive\\文件\\ChatGPT\\金融科技\\Financial_Tech\\data\\etf\\active_etf_holdings_2026-10-13.csv",
+    "C:\\Users\\jessi\\OneDrive\\文件\\ChatGPT\\金融科技\\Financial_Tech\\data\\etf\\active_etf_top15_2026-10-13.csv"
+  ],
+  "active_snapshot_written": true,
+  "updated_at": "2026-10-17T13:56:19.618264+00:00",
+  "report_file": "C:\\Users\\jessi\\OneDrive\\文件\\ChatGPT\\金融科技\\Financial_Tech\\data\\etf\\active_etf_update_20261017T135619619273Z.json"
+}

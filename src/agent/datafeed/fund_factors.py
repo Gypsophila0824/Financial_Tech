@@ -9,7 +9,8 @@
                財報數字為今年累計（第 2 季 ＝ 上半年），故乘 4 ÷ 季別年化；權益 ≤ 0 不計算。
                財報依產業分格式（一般業、銀行、證券期貨、金控、保險、異業），金融股也有，
                是金融股唯一有資料的基本面因子。全部 150 檔一起排名（金融業 ROE 天生較低，不另外分組）。
-  各因子在 150 檔內做百分位排名（0 最差、1 最好，缺值給 0.5），fund_score ＝ 四者平均。
+  各因子在 150 檔內做百分位排名（0 最差、1 最好，缺值給 0.5）。正式 fund_score 依 strategy.py
+  僅以 B1 營收成長與 B3 營收加速各 50% 計算；B2、B4 保留供診斷及其他研究使用。
   金融保險業的 B1、B3 一律給中性分（營收含投資損益，與一般公司不可比）；
   B2 則因金融業、異業財報無營業利益科目而查無資料，同樣給中性分。
 
@@ -42,6 +43,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from .. import strategy
+
 HERE = Path(__file__).resolve().parents[3]  # 專案根目錄（原為程式所在資料夾）
 SECURITY_MASTER = HERE / "data" / "security_master.csv"
 RAW_DIR = HERE / "data" / "fundamental"
@@ -54,6 +57,16 @@ SOURCES = {
     "tpex_margin": "https://www.tpex.org.tw/openapi/v1/mopsfin_187ap17_O",
 }
 FACTORS = ["B1", "B2", "B3", "B4"]
+
+
+def production_score(frame: pd.DataFrame) -> pd.Series:
+    """依正式策略設定的基本面子因子權重計算分數；排名缺值已由 pct_rank 設為中性 0.5。"""
+    weights = strategy.FUND_SCORE_WEIGHTS
+    missing = set(weights) - set(frame.columns)
+    if missing:
+        raise ValueError(f"正式基本面分數缺少欄位：{sorted(missing)}")
+    return sum(pd.to_numeric(frame[column], errors="coerce").fillna(0.5) * weight
+               for column, weight in weights.items())
 MAX_FALLBACK_DAYS = 40    # 抓取失敗時，最多沿用幾天前存下的原始資料（月營收每月更新一次）★
 STATEMENT_KINDS = ["ci", "basi", "bd", "fh", "ins", "mim"]   # 一般業、銀行、證券期貨、金控、保險、異業
 # 欄名在各產業、上市上櫃間略有差異：「淨利（淨損）／淨利（損）歸屬於母公司業主」、「歸屬於母公司業主（之）權益（合計）」。
@@ -232,7 +245,7 @@ def compute(raw_dir):
     f.loc[f["industry"] == "金融保險業", ["B1", "B3"]] = None
     for c in FACTORS:
         f[f"{c}_rank"] = pct_rank(f[c])
-    f["fund_score"] = f[[f"{c}_rank" for c in FACTORS]].mean(axis=1)
+    f["fund_score"] = production_score(f)
     f.attrs["revenue_fallback"] = revenue_fallback
     return f
 

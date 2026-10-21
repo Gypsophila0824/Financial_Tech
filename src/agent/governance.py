@@ -23,6 +23,7 @@ def production_manifest() -> dict:
         "theme": strategy.THEME_NAME,
         "production_model": {
             "score_weights": strategy.SCORE_WEIGHTS,
+            "fundamental_score_weights": strategy.FUND_SCORE_WEIGHTS,
             "price_volume_factors": [
                 "A1: 近20日還原報酬",
                 "A2: 跳過最近5日的60日還原報酬",

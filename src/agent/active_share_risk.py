@@ -10,6 +10,7 @@ from .datafeed.etf_holdings import ETFS
 from .tools.trading_calendar import is_trading_day
 
 EXPECTED_ETFS = frozenset(code for code, _ in ETFS)
+MAX_ETF_SNAPSHOT_AGE_DAYS = 366  # Permit a prior-year snapshot, but never use it indefinitely.
 
 
 def rule_definition() -> dict:
@@ -23,7 +24,7 @@ def matches_current_rule(entry: dict) -> bool:
 
 
 def validate_benchmarks(benchmarks, dates: dict[str, str], as_of: str) -> list[str]:
-    """缺檔、未來／未知日期或無效權重拒絕；較舊日期只提示，不假定違規。"""
+    """缺檔、逾期、未來／未知日期或無效權重拒絕；可用舊快照會提示實際日期。"""
     missing, extra = EXPECTED_ETFS - set(benchmarks), set(benchmarks) - EXPECTED_ETFS
     if missing or extra:
         raise ValueError(f"ETF 清單不完整：缺少 {sorted(missing)}；非官方清單 {sorted(extra)}")
@@ -41,8 +42,11 @@ def validate_benchmarks(benchmarks, dates: dict[str, str], as_of: str) -> list[s
             raise ValueError(f"{code} 缺少有效資料日期") from exc
         if observed > cutoff:
             raise ValueError(f"{code} 資料日期 {observed} 晚於檢查時點 {as_of}")
+        age_days = (cutoff - observed).days
+        if age_days > MAX_ETF_SNAPSHOT_AGE_DAYS:
+            raise ValueError(f"{code} ETF 持股快照已舊 {age_days} 日，超過允許的 {MAX_ETF_SNAPSHOT_AGE_DAYS} 日；請更新資料")
         if observed < cutoff:
-            notes.append(f"{code} 資料日 {observed}，較檢查日 {as_of} 舊 {(cutoff-observed).days} 日；待核對最新公告")
+            notes.append(f"{code} 資料日 {observed}，較檢查日 {as_of} 舊 {age_days} 日；沿用最近已公布快照，待核對最新公告")
     return notes
 
 
@@ -70,7 +74,7 @@ def record_close(history: list[dict], day: str, weights: dict, benchmarks: dict,
         notes.append("前一交易日 Active Share 紀錄使用舊制或未標示規則；保留舊紀錄，新制連續天數重新起算")
     rows = {}
     for code, bench in benchmarks.items():
-        score = .5 * sum(abs(top.get(t, 0) - bench.get(t, 0)) for t in set(top) | set(bench))
+        score = float(.5 * sum(abs(top.get(t, 0) - bench.get(t, 0)) for t in set(top) | set(bench)))
         below = score < rules.ACTIVE_SHARE_MIN
         old = prior['etfs'].get(code, {}) if prior else {}
         current = dates[code] == day

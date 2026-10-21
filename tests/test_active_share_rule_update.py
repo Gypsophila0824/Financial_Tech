@@ -1,6 +1,7 @@
 """Regression tests for the organizer's top-fifteen / 15% rule update."""
 import copy
 import csv
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -161,3 +162,44 @@ def test_fetcher_exports_fifteen_without_network(tmp_path,monkeypatch):
     assert len(exported)==15
     assert exported[-1]['code']=='2014'
     assert not (tmp_path/'active_etf_top10_2026-10-13.csv').exists()
+
+
+def test_fetcher_keeps_partial_refresh_out_of_backtest_snapshot_glob(tmp_path, monkeypatch):
+    from src.agent.datafeed import etf_holdings as feed
+    monkeypatch.setattr(feed, 'OUT_DIR', tmp_path)
+    monkeypatch.setattr(feed, 'ETFS', [('AAA', 'A'), ('BBB', 'B')])
+    monkeypatch.setattr(feed, 'fetch', lambda code: code)
+    monkeypatch.setattr(feed, 'parse', lambda code: ('2026-10-16', [('Name', '1234', 'TW', 10, '100')])
+                        if code == 'AAA' else (None, []))
+    monkeypatch.setattr(feed.time, 'sleep', lambda _: None)
+
+    result = feed.refresh()
+
+    assert result['complete'] is False
+    assert result['active_snapshot_written'] is False
+    assert result['missing'][0]['etf_id'] == 'BBB'
+    assert result['observed_dates'] == ['2026-10-16']
+    assert not list(tmp_path.glob('active_etf_holdings_????-??-??.csv'))
+    assert list(tmp_path.glob('active_etf_holdings_*.partial.csv'))
+    assert Path(result['report_file']).is_file()
+
+
+def test_fetcher_archives_same_date_snapshot_before_refresh(tmp_path, monkeypatch):
+    from src.agent.datafeed import etf_holdings as feed
+    monkeypatch.setattr(feed, 'OUT_DIR', tmp_path)
+    monkeypatch.setattr(feed, 'ETFS', [('AAA', 'A')])
+    rows = [('First', '1234', 'TW', 10, '100')]
+    monkeypatch.setattr(feed, 'fetch', lambda _: 'fixture')
+    monkeypatch.setattr(feed, 'parse', lambda _: ('2026-10-16', list(rows)))
+    monkeypatch.setattr(feed.time, 'sleep', lambda _: None)
+    feed.refresh()
+    snapshot = tmp_path / 'active_etf_holdings_2026-10-16.csv'
+    original = snapshot.read_text(encoding='utf-8-sig')
+
+    rows[:] = [('Revised', '1234', 'TW', 11, '110')]
+    feed.refresh()
+
+    backups = list((tmp_path / 'archive').glob('active_etf_holdings_2026-10-16_*.csv'))
+    assert len(backups) == 1
+    assert backups[0].read_text(encoding='utf-8-sig') == original
+    assert 'Revised' in snapshot.read_text(encoding='utf-8-sig')

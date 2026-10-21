@@ -1,8 +1,8 @@
-"""平行研究模型：量價趨勢主導、基本面品質篩選、新聞固定。
+"""平行研究模型：量價、基本面品質分數與固定新聞分數混合排名。
 
 本模組僅產生研究用排名，不能產生 target weights、交易決策、訂單或 D-Plan。
-量價分數決定主排名；基本面只作為品質閘門；新聞分數沿用正式策略既有定義與
-權重，不是研究調參對象。正式交易一律由 factor_engine.py 決定。
+研究線主排名可調整量價／基本面配重；新聞分數及重大利空否決沿用正式策略口徑。
+正式交易一律由 factor_engine.py 決定。
 """
 
 from __future__ import annotations
@@ -20,8 +20,6 @@ from .news_policy import news_veto
 ROOT = Path(__file__).resolve().parents[2]
 MODEL_VERSION = R.MODEL_VERSION
 REQUIRED_COLUMNS = {"date", "ticker", "close", "volume", "value"}
-NEWS_WEIGHT = S.SCORE_WEIGHTS["news_score"]
-TECHNICAL_WEIGHT = 1.0 - NEWS_WEIGHT
 
 
 def _percentile(series: pd.Series) -> pd.Series:
@@ -33,7 +31,7 @@ def _percentile(series: pd.Series) -> pd.Series:
 
 
 def _fundamental_quality(out: pd.DataFrame, fundamental: pd.DataFrame | None) -> pd.DataFrame:
-    """加入基本面品質閘門，但不把基本面納入研究主排名。
+    """計算基本面品質分數並加入品質閘門。
 
     ``blocked`` 需要營收明顯衰退，且至少一項可得獲利品質指標為非正值，避免
     因單一缺值或金融業的中性欄位錯誤排除股票。``watch`` 不阻擋續抱／研究排名，
@@ -202,15 +200,22 @@ def compute_shadow_ranking(
     def weighted_score(weights: dict[str, float]) -> pd.Series:
         return sum(weights[name] * out[f"{name}_score"] for name in weights)
 
-    # 兩組共用同一批原始訊號與後續篩選；控制實驗唯一可替換輸入是這個量價加權。
+    # 兩組共用相同訊號與後續篩選；候選組改變量價與基本面分配。
     out["baseline_technical_score"] = weighted_score(R.BASELINE_TECHNICAL_WEIGHTS)
     out["technical_score"] = weighted_score(R.EXPERIMENTAL_TECHNICAL_WEIGHTS)
     out["shadow_score"] = out["technical_score"]  # 相容既有研究輸出欄位。
     out = _fundamental_quality(out, fundamental)
     out = _fixed_news(out, news, formal_a3)
-    out["baseline_research_score"] = (TECHNICAL_WEIGHT * out["baseline_technical_score"]
-                                      + NEWS_WEIGHT * out["news_score"])
-    out["research_score"] = TECHNICAL_WEIGHT * out["technical_score"] + NEWS_WEIGHT * out["news_score"]
+    # Freeze the current experimental technical recipe in both arms so this
+    # paired comparison isolates only the technical/fundamental mix.
+    out["baseline_research_score"] = (
+        R.BASELINE_RESEARCH_WEIGHTS["technical"] * out["technical_score"]
+        + R.BASELINE_RESEARCH_WEIGHTS["fundamental"] * out["fundamental_quality_score"]
+        + R.BASELINE_RESEARCH_WEIGHTS["news"] * out["news_score"])
+    out["research_score"] = (
+        R.EXPERIMENTAL_RESEARCH_WEIGHTS["technical"] * out["technical_score"]
+        + R.EXPERIMENTAL_RESEARCH_WEIGHTS["fundamental"] * out["fundamental_quality_score"]
+        + R.EXPERIMENTAL_RESEARCH_WEIGHTS["news"] * out["news_score"])
     out["research_eligible"] = ~out["fundamental_blocked"] & ~out["news_veto"]
     out = out.sort_values(["research_score", "technical_score", "strength_score"], ascending=False, kind="stable")
     out["shadow_rank"] = range(1, len(out) + 1)
@@ -219,7 +224,7 @@ def compute_shadow_ranking(
     out.loc[eligible, "selected"] = True
     out["baseline_selected"] = False
     baseline_order = out.sort_values(
-        ["baseline_research_score", "baseline_technical_score", "strength_score"],
+        ["baseline_research_score", "technical_score", "strength_score"],
         ascending=False, kind="stable",
     )
     baseline_eligible = baseline_order.index[baseline_order["research_eligible"]][:selected_count]
