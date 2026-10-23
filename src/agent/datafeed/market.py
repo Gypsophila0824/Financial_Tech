@@ -3,13 +3,15 @@
 來源（皆依日期查詢，可補歷史）：
   上市行情  證交所 MI_INDEX（每日收盤行情）
   上市法人  證交所 T86（三大法人買賣超日報）
-  上櫃行情  櫃買中心 afterTrading/otc
+  上櫃行情  櫃買中心 afterTrading/dailyQuotes，扣除 blockTrade/tradeInfo 當日單一證券鉅額交易
   上櫃法人  櫃買中心 insti/dailyTrade
 
 輸出：data/market/daily.csv
   date, ticker, market, open, high, low, close, volume, value, avg_price,
   insti_net_shares, foreign_net_shares, trust_net_shares, dealer_net_shares, ref_next
-  avg_price ＝ 成交金額 ÷ 成交股數（即官方成交價定義）；當日無成交者價格欄位留空。
+  avg_price ＝ 成交金額 ÷ 成交股數；上櫃使用完整行情扣除當日單一證券鉅額交易後的金額與股數。
+      此範圍已與 2026/10/22 六檔上櫃平台顯示價核對；仍保留四位計算精度，不代表已完成官方現金對帳。
+      price_scope、total_volume/value、block_volume/value、block_source 保留原始範圍與扣除依據。
   insti_net_shares ＝ 三大法人買賣超股數合計 ＝ foreign ＋ trust ＋ dealer：
       foreign ＝ 外資及陸資（含外資自營商）、trust ＝ 投信、dealer ＝ 自營商（自行買賣＋避險）。
       分開存放供回測比較「合計」與「只看外資＋投信」（自營商多為短線、避險交易）。
@@ -50,13 +52,15 @@ import urllib.request
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
+from . import tpex_prices
+
 HERE = Path(__file__).resolve().parents[3]  # 專案根目錄（原為程式所在資料夾）
 SECURITY_MASTER = HERE / "data" / "security_master.csv"
 OUT_PATH = HERE / "data" / "market" / "daily.csv"
 EXRIGHT_PATH = HERE / "data" / "market" / "twse_exright.csv"
 INSTI_FIELDS = ["insti_net_shares", "foreign_net_shares", "trust_net_shares", "dealer_net_shares"]
 FIELDS = ["date", "ticker", "market", "open", "high", "low", "close", "volume", "value", "avg_price",
-          *INSTI_FIELDS, "ref_next", "src", "insti_src"]
+          *INSTI_FIELDS, "ref_next", "src", "insti_src", *tpex_prices.AUDIT_FIELDS]
 CHECK_LOG = HERE / "data" / "market" / "fallback_check.csv"
 CHECK_FIELDS = ["checked_at", "date", "source", "kind", "compared", "matched", "missing", "mismatch_examples"]
 FALLBACK_WINDOW_DAYS = 7   # 只有這幾天內的最近一個交易日可用備援來源
@@ -65,7 +69,7 @@ OFFICIAL_SRC = ("", "twse", "tpex")   # 空白 ＝ 加入來源欄位前的舊�
 TWSE_QUOTES = "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date={ymd}&type=ALLBUT0999&response=json"
 TWSE_INSTI = "https://www.twse.com.tw/rwd/zh/fund/T86?date={ymd}&selectType=ALL&response=json"
 TWSE_EXRIGHT = "https://www.twse.com.tw/rwd/zh/exRight/TWT49U?startDate={start}&endDate={end}&response=json"
-TPEX_QUOTES = "https://www.tpex.org.tw/www/zh-tw/afterTrading/otc?date={slash}&type=EW&response=json"
+TPEX_QUOTES = tpex_prices.DAILY_URL
 TPEX_INSTI = "https://www.tpex.org.tw/www/zh-tw/insti/dailyTrade?type=Daily&sect=EW&date={slash}&response=json"
 TPEX_OPENAPI_QUOTES = "https://www.tpex.org.tw/openapi/v1/tpex_mainboard_quotes"
 TPEX_OPENAPI_INSTI = "https://www.tpex.org.tw/openapi/v1/tpex_3insti_daily_trading"
@@ -159,18 +163,7 @@ def twse_insti(ymd):
 
 
 def tpex_quotes(slash):
-    j = get_json(TPEX_QUOTES.format(slash=slash), TPEX_SLEEP)
-    tables = [t for t in j.get("tables", []) if t.get("data")]
-    if not tables:
-        return None
-    out = {}
-    for r in table_rows(tables[0]):
-        # 此端點沒有「次日參考價」欄位；漲跌停價為參考價 ±10%，取中點還原參考價（誤差在半個跳動單位內）
-        up, down = num(r["次日漲停價"]), num(r["次日跌停價"])
-        ref_next = round((up + down) / 2, 4) if up and down else None
-        out[r["代號"]] = (num(r["開盤"]), num(r["最高"]), num(r["最低"]), num(r["收盤"]),
-                         num(r["成交股數"]), num(r["成交金額(元)"]), ref_next)
-    return out
+    return tpex_prices.fetch_quotes(slash, get_json, TPEX_SLEEP)
 
 
 def tpex_insti(slash):
@@ -322,7 +315,9 @@ def fetch_day(d, universe, allow_fallback=False):
                      "open": o, "high": h, "low": l, "close": c, "volume": vol, "value": val, "avg_price": avg,
                      **dict(zip(INSTI_FIELDS, (None,) * 4 if no_insti else insti.get(ticker, (0.0,) * 4))),
                      "ref_next": ref_next, "src": "twse" if market == "TWSE" else q_src,
-                     "insti_src": "twse" if market == "TWSE" else i_src})
+                     "insti_src": "twse" if market == "TWSE" else i_src,
+                     **{field: getattr(quotes, "audit", {}).get(ticker, {}).get(field, "")
+                        for field in tpex_prices.AUDIT_FIELDS}})
     if missing:
         print(f"  {d} 行情查無：{missing}（可能停牌，價格留空）", file=sys.stderr)
     return rows
@@ -424,6 +419,7 @@ def fetch_twse_exright(first, last, tickers):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--days", type=int, default=80, help="要補齊的最近交易日數（預設 80，60 日因子需要緩衝）")
+    ap.add_argument("--date", type=date.fromisoformat, help="只重新抓取指定 YYYY-MM-DD 的官方行情；不使用備援，不改動其他日期")
     args = ap.parse_args()
 
     with open(SECURITY_MASTER, encoding="utf-8-sig") as f:
@@ -438,15 +434,28 @@ def main():
                 for k in ("src", "insti_src"):  # 加入來源欄位前的舊資料皆為官方，補上以免欄位型別混雜
                     row[k] = row[k] or ("twse" if row["market"] == "TWSE" else "tpex")
                 rows[(r["date"], r["ticker"])] = row  # 同鍵重複時保留後者
+    if args.date:
+        new = fetch_day(args.date, universe, allow_fallback=False)
+        if not new:
+            raise SystemExit(f"{args.date} 官方行情不完整，未更新行情檔")
+        rows = {key: row for key, row in rows.items() if key[0] != args.date.isoformat()}
+        rows.update({(row["date"], row["ticker"]): row for row in new})
+        save(rows)
+        print(f"{args.date} 官方行情已更新 {len(new)} 檔，上櫃均價已排除當日單一證券鉅額交易")
+        return
     # 欄位完整且皆為官方資料的日期才算已完成：舊格式（缺外資／投信／自營商）、備援暫用的日期會重抓取代
     incomplete = {d for (d, _), r in rows.items() if any(r[k] in ("", None) for k in INSTI_FIELDS)}
     provisional = {d for (d, _), r in rows.items()
                    if r["src"] not in OFFICIAL_SRC or r["insti_src"] not in OFFICIAL_SRC}
+    old_scope = {d for (d, _), r in rows.items() if tpex_prices.needs_refresh(r)}
+    provisional |= old_scope
     done = {d for d, _ in rows} - incomplete - provisional
     if incomplete - provisional:
         print(f"欄位不完整的舊資料 {len(incomplete - provisional)} 天，將重抓取代")
     if provisional:
         print(f"使用備援資料的日期 {sorted(provisional)}，將嘗試以櫃買官方資料取代")
+    if old_scope:
+        print(f"上櫃均價範圍尚未更新 {len(old_scope)} 天，將重抓完整行情並扣除當日單一證券鉅額交易")
 
     # 從今天往回走，跳過週末；有資料的日子算一個交易日，直到湊滿 --days 天
     # 只有遇到的第一個（最近的）交易日、且在 FALLBACK_WINDOW_DAYS 天內，才允許上櫃資料改用備援來源

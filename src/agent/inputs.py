@@ -24,6 +24,7 @@ from . import rules
 from .datafeed import fund_factors, pv_factors
 from .datafeed.etf_holdings import ETFS
 from .datafeed.market import FALLBACK_INSTI_SOURCES, FALLBACK_QUOTE_SOURCES
+from .datafeed.tpex_prices import DAILY_URL as TPEX_QUOTES, PRICE_SCOPE
 from .factor_engine import etf_top_holdings
 from .active_share_risk import validate_benchmarks
 from .tools.trading_calendar import trading_days
@@ -37,7 +38,6 @@ SECURITY_MASTER = ROOT / "data" / "security_master.csv"
 
 TWSE_QUOTES = "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date={ymd}&type=ALLBUT0999&response=json"
 TWSE_INSTI = "https://www.twse.com.tw/rwd/zh/fund/T86?date={ymd}&selectType=ALL&response=json"
-TPEX_QUOTES = "https://www.tpex.org.tw/www/zh-tw/afterTrading/otc?date={slash}&type=EW&response=json"
 TPEX_INSTI = "https://www.tpex.org.tw/www/zh-tw/insti/dailyTrade?type=Daily&sect=EW&date={slash}&response=json"
 FUND_SOURCES = {
     "twse_revenue": ("mops", "https://openapi.twse.com.tw/v1/opendata/t187ap05_L", "上市公司每月營業收入彙總表"),
@@ -153,6 +153,12 @@ class StoreInputs:
         day = self.daily[self.daily["date"] == d]
         if day["ticker"].duplicated().any():
             raise ValueError(f"{d} 行情有重複股票，無法決定成交均價")
+        if "market" in day:
+            otc = day[day["market"] == "TPEX"]
+            scope = otc.get("price_scope", pd.Series("", index=otc.index))
+            stale = otc.loc[scope != PRICE_SCOPE, "ticker"].tolist()
+            if stale:
+                raise ValueError(f"{d} 上櫃均價尚未完成完整行情扣除鉅額的核對：{stale}；請重抓行情，禁止以舊資料或備援均價結算")
         prices = pd.to_numeric(day["avg_price"], errors="coerce")
         return {t: float(a) for t, a in zip(day["ticker"], prices) if pd.notna(a) and math.isfinite(a) and a > 0}
 
