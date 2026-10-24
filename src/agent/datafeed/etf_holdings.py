@@ -71,6 +71,9 @@ def is_stock(name, code, mkt):
     # 台股個股：TW/TWO 且代碼為 4 碼數字；海外個股：非 TF(期貨) 的其他市場，含無代碼者
     if mkt == "TF" or "選擇權" in name or "期貨" in name:
         return False
+    # MoneyDJ 的台指選擇權也可能以英文合約名稱、無代碼／市場列出。
+    if re.fullmatch(r"TAIWAN\s+TAIE\s+[CP]\s+\d{1,2}[A-Z]{3}\d{2}\s+\d+(?:\.\d+)?\s+TWSE", name, re.I):
+        return False
     if re.search(r"\bETF\b", name, re.I):  # 用整字比對，避免誤判 Netflix
         return False
     if mkt in ("TW", "TWO"):

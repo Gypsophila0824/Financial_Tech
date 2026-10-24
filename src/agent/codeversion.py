@@ -10,9 +10,11 @@ import hashlib
 import zipfile
 from pathlib import Path
 
+from . import rules
+
 ROOT = Path(__file__).resolve().parents[2]
 VERSIONED = [ROOT / "src", ROOT / "config", ROOT / "data" / "security_master.csv", ROOT / "requirements.txt",
-             ROOT / "比賽文件" / "D-Plan.schema_v4.2.json"]     # 合規檢查需要 schema，重現時要一起還原
+             ROOT / rules.SCHEMA_RELATIVE_PATH]     # 合規檢查需要當前 schema，重現時要一起還原
 ARCHIVE_DIR = ROOT / "output" / "code_archive"
 
 

@@ -3,12 +3,19 @@
   "reviewed_at": "2026-10-16",
   "official_web_check": "403; latest applicable announcements not verified",
   "pending": {
-    "fee_tax_rounding": "Existing floor-to-TWD is an unconfirmed simulation assumption",
+    "official_datapack_ingestion": "v4.3 requires official DataPack settlement as next-decision basis; native import, missing/null handling, excluded_codes and voided outcome integration are not implemented. Local inferred ledger is not a substitute",
+    "fee_tax_rounding": "Daily aggregate commission basis confirmed by user-relayed latest organizer statement on 2026-10-22; floor-to-TWD precision remains unconfirmed. Tax aggregation was not specified; existing per-sell-order floor remains an unconfirmed simulation assumption",
     "average_price_precision": "Existing four decimals; exact exchange whole-lot feed scope and platform precision require reconciliation",
     "split_fractional_share": "Split adjustment and sub-share treatment not specified; unsupported events stop",
     "active_share_observation": "Top fifteen and 15% minimum per organizer notice supplied by user on 2026-10-16; exact publication/valuation cutoffs and official latest document still require platform validation",
     "code_sharing_scope": "No inter-team private sharing; public repository and third-party usage scope require confirmation",
     "live_corporate_actions": "Live event ledger and terminal dividend reconciliation are not implemented"
+  },
+  "fee_basis_evidence": {
+    "received_at": "2026-10-22",
+    "source": "User-relayed latest organizer statement in this chat",
+    "statement": "官方最新聲明是，是總金額統一計算",
+    "implementation": "Daily gross BUY plus SELL notional; no netting; fee rounding still pending"
   },
   "formal_release_approved": false,
   "approval_evidence": null

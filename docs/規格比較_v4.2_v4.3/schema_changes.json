@@ -1,0 +1,199 @@
+[
+  {
+    "path": "/$defs/agent_metadata/properties/code_version/description",
+    "kind": "changed",
+    "old": "當日程式碼版本識別，格式不限——git commit（git:a1b2c3d）、版本號（v1.4.2）、或當日程式碼打包檔之 sha256 前綴皆可。12/2 資格審查（黑箱重現）時須能提出與此識別對應之該版本程式碼；影響決策行為的參數與提示詞模板皆屬版本之一部分（改參數＝改版）。注意：此欄僅對晉級隊伍具驗證力（僅晉級者繳交程式碼受審）",
+    "new": "當日程式碼版本識別，格式不限——git commit（git:a1b2c3d）、版本號（v1.4.2）、或當日程式碼打包檔之 sha256 前綴皆可。"
+  },
+  {
+    "path": "/$defs/agent_metadata/properties/model_provider/description",
+    "kind": "changed",
+    "old": "模型供應商（自報，用於趨勢統計，非白名單）。自架開放權重模型請填**釋出權重的組織**（如 Llama → meta、Qwen → alibaba）；清單未涵蓋者填 other，並於 model_version 寫明。",
+    "new": "模型供應商。自架開放權重模型請填**釋出權重的組織**（如 Llama → meta、Qwen → alibaba）；清單未涵蓋者填 other，並於 model_version 寫明。"
+  },
+  {
+    "path": "/$defs/agent_metadata/properties/run_completed_at/description",
+    "kind": "changed",
+    "old": "C6: ≤ server 收件戳（自報時間，作時間鎖之輔助界標）",
+    "new": "自報之執行完成時間，須 ≤ server 收件戳"
+  },
+  {
+    "path": "/$defs/decision/properties/action/description",
+    "kind": "added",
+    "new": "決策動作：BUY 新建倉（前一交易日結算持股為 0）／ADD 加碼既有持股／TRIM 減碼但保留部位／SELL_ALL 全數出清"
+  },
+  {
+    "path": "/$defs/decision/properties/funding_for/description",
+    "kind": "changed",
+    "old": "選填。資金調度宣告：本筆賣出（限 action=TRIM/SELL_ALL）是為了支應所列之同日 BUY/ADD 決策。C14 檢核：①引用存在且指向買進決策；②缺口存在性——不執行全部調度賣出時，重算現金比須低於 market_view.target_cash_pct_range 下限，否則「錢夠卻宣稱調度」與數字矛盾，拒件。動機可複合（訊號＋調度並存合法）；標記後推論應說明「為何選此標的讓位」之選擇邏輯",
+    "new": "選填。資金調度宣告：本筆賣出（限 action=TRIM/SELL_ALL）是為了支應所列之同日 BUY/ADD 決策。系統檢核：①引用存在且指向買進決策；②缺口存在性——不執行全部調度賣出時，重算現金比須低於 market_view.target_cash_pct_range 下限，否則「錢夠卻宣稱調度」與數字矛盾。動機可複合（訊號＋調度並存合法）；標記後推論應說明「為何選此標的讓位」之選擇邏輯"
+  },
+  {
+    "path": "/$defs/decision/properties/inference_refs/description",
+    "kind": "changed",
+    "old": "C1: 孤兒決策（無推論支撐）→ 拒收",
+    "new": "每個 id 必須存在於 inferences；每筆決策至少引用 1 筆推論（不得為孤兒決策）。未通過即整份退回"
+  },
+  {
+    "path": "/$defs/decision/properties/inference_refs/maxItems",
+    "kind": "changed",
+    "old": 5,
+    "new": 8
+  },
+  {
+    "path": "/$defs/decision/properties/target_weight/description",
+    "kind": "changed",
+    "old": "schema 粗檢 ≤0.25（2330 專屬上限）；非 2330 之 ≤0.10 由 C9 重算把關。期初權重不申報——稽核端以主辦方前日結算紀錄為準（參賽端自行記帳追蹤）",
+    "new": "本日委託執行後之目標權重，由參賽者自訂；orders 推導（見《D-Plan 撰寫指南》§⑥）。單位為比率（0.19 = 19%），分母為前日結算淨值（資料包 account.nav_tradable）。"
+  },
+  {
+    "path": "/$defs/inference/properties/counter_evidence/description",
+    "kind": "added",
+    "new": "與本推論相反的訊號；無則明填 null"
+  },
+  {
+    "path": "/$defs/inference/properties/logic/description",
+    "kind": "changed",
+    "old": "推導過程：哪些前提、為何成立（抽檢時對照公開說明書主題/因子審關聯性）",
+    "new": "推導過程：哪些前提、為何成立"
+  },
+  {
+    "path": "/$defs/inference/properties/premise_refs/description",
+    "kind": "changed",
+    "old": "C1: 每個 id 必須存在於 observations",
+    "new": "每個 id 必須存在於 observations。未通過即整份退回"
+  },
+  {
+    "path": "/$defs/market_view/properties/basis_refs/description",
+    "kind": "changed",
+    "old": "C1: 市場級依據（大盤、期貨夜盤、隔夜美股、匯率、巨集事件之 obs_id）",
+    "new": "市場級依據（大盤、期貨夜盤、隔夜美股、匯率、巨集事件之 obs_id）；每個 id 必須存在於 observations。未通過即整份退回"
+  },
+  {
+    "path": "/$defs/market_view/properties/posture/properties/net_exposure_intent/description",
+    "kind": "changed",
+    "old": "C12: 淨曝險意圖。收件時以 T-1 交易所收盤價重算委託淨流向比對：increase→淨買超；reduce→淨賣超；hold→|淨流向| ≤ 容差（server 參數，預設 2% NAV）。不一致拒收",
+    "new": "淨曝險意圖。收件時以 T-1 交易所收盤價重算委託淨流向比對：increase→淨買超；reduce→淨賣超；hold→|淨流向| ≤ 容差（server 參數，預設 2% NAV）。"
+  },
+  {
+    "path": "/$defs/market_view/properties/posture/properties/target_cash_pct_range/description",
+    "kind": "changed",
+    "old": "C12: 目標現金區間 [下限, 上限]，須下限 ≤ 上限（語意層檢查）。收件時以 T-1 收盤價重算委託後預估現金比，落在區間外拒收。註：實際成交為 T 日均價，結算現金比會偏移——區間宣告請對 0%/25% 硬限留緩衝",
+    "new": "目標現金區間 [下限, 上限]，須下限 ≤ 上限。收件時以 T-1 收盤價重算委託後預估現金比，比對是否落在區間內。註：實際成交為 T 日均價，市值以 T 日收盤價計算"
+  },
+  {
+    "path": "/$defs/observation/properties/source_ref/description",
+    "kind": "changed",
+    "old": "C1: 每個 id 必須存在於 sources",
+    "new": "每個 id 必須存在於 sources。未通過即整份退回"
+  },
+  {
+    "path": "/$defs/observation/properties/source_ref/maxItems",
+    "kind": "changed",
+    "old": 5,
+    "new": 10
+  },
+  {
+    "path": "/$defs/observation/properties/values/description",
+    "kind": "changed",
+    "old": "抽檢時逐值回對證據包快照（權威來源另可對公開資料重驗）；只收數字",
+    "new": "抽檢時逐值回對證據包快照；只收數字"
+  },
+  {
+    "path": "/$defs/order/properties/decision_ref/description",
+    "kind": "changed",
+    "old": "C1 + C2",
+    "new": "須存在於 decisions，未通過即整份退回；本筆委託須與該決策的推導結果一致"
+  },
+  {
+    "path": "/$defs/order/properties/shares/description",
+    "kind": "changed",
+    "old": "整股限制（規則六(十)）：千股之正整數倍",
+    "new": "整股限制：千股之正整數倍。未通過即整份退回"
+  },
+  {
+    "path": "/$defs/source/properties/archive_url/description",
+    "kind": "changed",
+    "old": "選填。第三方存檔（web.archive.org / archive.today）。v3.3 起無證據包快照，此欄是 media/vendor 內容真實性的唯一外部佐證——強烈建議；有存檔者抽檢直接採信，無存檔之關鍵來源列合理性審查優先",
+    "new": "選填。第三方存檔（web.archive.org / archive.today）。此欄是 media/vendor 內容真實性的外部佐證，建議填入；有存檔者抽檢直接採信，無存檔之關鍵來源列合理性審查優先"
+  },
+  {
+    "path": "/$defs/source/properties/authority/description",
+    "kind": "changed",
+    "old": "權威分級，決定稽核方式：twse/tpex/taifex/mops=交易所與主管機關公開資料（事後重抓比值）；fininst=投信/券商/銀行等金融機構發布之研究報告、基金與 ETF 資料；media=新聞媒體；vendor=行情/數據服務商（CMoney、富果 Fugle 等之 API 或數據）；fininst/media/vendor 皆為易變內容——不做 refetch 比對，內容佐證依賴 archive_url。分類依「內容性質」而非網站名稱：同一站的新聞報導屬 media、行情數據屬 vendor。v3.1: 競賽系統不提供資料，platform 已移除",
+    "new": "twse/tpex/taifex/mops=交易所與主管機關公開資料（事後重抓比值）；fininst=投信/券商/銀行等金融機構發布之研究報告、基金與 ETF 資料；media=新聞媒體；vendor=行情/數據服務商（CMoney、富果 Fugle 等之 API 或數據）；清單未涵蓋者填 other"
+  },
+  {
+    "path": "/$defs/source/properties/fetched_at/description",
+    "kind": "changed",
+    "old": "選填。抓取時刻僅供異常排查；有填時 C6 檢查 ≤ server 收件戳",
+    "new": "選填。抓取時刻僅供異常排查；有填時須 ≤ server 收件戳"
+  },
+  {
+    "path": "/description",
+    "kind": "changed",
+    "old": "每台股交易日繳交之單一 JSON 文件（每日唯一繳交物）。設計判準：欄位僅保留「稽核端無法自行重建、且驗證需要」之資訊；約束由 server 以官方公開資料純重算把關。結構層（本 schema）通過後另須通過語意層 C 檢查（verify_dplan.py）。歷次設計決策與取捨見 規格修訂_v*.md 系列。",
+    "new": "每台股交易日繳交之 JSON 文件（每日唯一繳交物），包含決策過程和當日委托內容。"
+  },
+  {
+    "path": "/properties/decisions/maxItems",
+    "kind": "changed",
+    "old": 30,
+    "new": 60
+  },
+  {
+    "path": "/properties/market_view/description",
+    "kind": "changed",
+    "old": "L2M 整體市場判斷鏈（v3.0 新增，必填）：市場級依據 → 走向研判 → 風險姿態 → 可驗證的部位含意。C12 硬檢查宣告與委託總效果的一致性",
+    "new": "L2M 整體市場判斷鏈（必填）：市場級依據 → 走向研判 → 風險姿態 → 可驗證的部位含意。系統會檢查宣告與委託總效果的一致性"
+  },
+  {
+    "path": "/properties/no_trade_decisions/description",
+    "kind": "changed",
+    "old": "L3 決策層（續抱）：每檔未異動持股各一筆，附理由引用",
+    "new": "L3 決策層（續抱）：每檔未異動持股各一筆，附理由引用。未通過即整份退回"
+  },
+  {
+    "path": "/properties/orders/description",
+    "kind": "changed",
+    "old": "L4 委託層。C2: 必須逐位元等於 derive-orders.v2(decisions, 主辦方前日結算持股, 交易所公開收盤價, 前日結算 NAV)；現金與持股約束由 C9/C11 純 server 重算把關",
+    "new": "L4 委託層。須與《D-Plan 撰寫指南》§⑥ 的推導演算法（輸入為 decisions、資料包的前日結算持股與淨值、交易所前日收盤價）結果一致（比對 ticker / side / shares）"
+  },
+  {
+    "path": "/properties/orders/maxItems",
+    "kind": "changed",
+    "old": 30,
+    "new": 60
+  },
+  {
+    "path": "/properties/schema_version/const",
+    "kind": "removed",
+    "old": "4.2"
+  },
+  {
+    "path": "/properties/schema_version/description",
+    "kind": "added",
+    "new": "規格版本，填 4.x（例如 4.3）"
+  },
+  {
+    "path": "/properties/schema_version/pattern",
+    "kind": "added",
+    "new": "^4\\.\\d+$"
+  },
+  {
+    "path": "/properties/schema_version/type",
+    "kind": "added",
+    "new": "string"
+  },
+  {
+    "path": "/properties/team_id/description",
+    "kind": "changed",
+    "old": "自我識別欄位；server 核對其與認證身分一致，不一致拒收",
+    "new": "隊伍ID，作為識別上傳檔案的隊伍欄位"
+  },
+  {
+    "path": "/properties/trade_date/description",
+    "kind": "added",
+    "new": "「本計劃書所對應之交易日（非繳交日）」"
+  }
+]

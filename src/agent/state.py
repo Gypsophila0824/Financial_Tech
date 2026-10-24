@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import math
+from decimal import Decimal
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -48,8 +49,24 @@ class PortfolioState:
 
 
 def trade_fee(amount: float) -> float:
-    # 待確認：主辦方手續費是否無條件捨去至整數元、是否有最低手續費；先採捨去、無下限
-    return math.floor(amount * rules.FEE_RATE)
+    """對當日買賣成交總額計費；捨去至元仍為未確認的模擬假設。"""
+    return math.floor(Decimal(str(amount)) * Decimal(str(rules.FEE_RATE)))
+
+
+def daily_trade_fee(amounts) -> int:
+    """先加總全部買進及賣出成交金額，再統一計算手續費（不互抵）。"""
+    return trade_fee(sum((Decimal(str(a)) for a in amounts), Decimal(0)))
+
+
+def allocate_daily_fees(amounts) -> list[int]:
+    """報表用累計差額分攤；合計等於日總費用，並非逐筆實際收費。"""
+    cumulative, charged, allocated = Decimal(0), 0, []
+    for amount in amounts:
+        cumulative += Decimal(str(amount))
+        total = trade_fee(cumulative)
+        allocated.append(total - charged)
+        charged = total
+    return allocated
 
 
 def trade_tax(amount: float) -> float:
@@ -70,16 +87,19 @@ def settle(
         raise ValueError(f"缺少有效成交均價：{invalid}；禁止以收盤價替代")
     holdings = dict(state.holdings)
     cash = state.cash
+    amounts = []
     for o in orders:
         amount = o.shares * fill_prices[o.ticker]
+        amounts.append(amount)
         if o.side == "BUY":
-            cash -= amount + trade_fee(amount)
+            cash -= amount
             holdings[o.ticker] = holdings.get(o.ticker, 0) + o.shares
         else:
             if o.shares > holdings.get(o.ticker, 0):
                 raise ValueError(f"{o.ticker} 賣出 {o.shares} 股超過持有 {holdings.get(o.ticker, 0)} 股")
-            cash += amount - trade_fee(amount) - trade_tax(amount)
+            cash += amount - trade_tax(amount)
             holdings[o.ticker] -= o.shares
+    cash -= daily_trade_fee(amounts)
     holdings = {t: s for t, s in holdings.items() if s > 0}
     last_close = {t: close_prices.get(t, state.last_close.get(t)) for t in holdings}
     missing = [t for t, px in last_close.items() if px is None]

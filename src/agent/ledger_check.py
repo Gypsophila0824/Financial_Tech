@@ -21,7 +21,7 @@ from pathlib import Path
 import pandas as pd
 
 from . import rules
-from .state import trade_fee, trade_tax
+from .state import daily_trade_fee, trade_tax
 from .tools.universe import load_universe
 
 CASH_TOLERANCE = 0.0005   # 現金差異容許值（淨值比例）
@@ -96,6 +96,7 @@ def check(ledger_path: Path, out_dir: Path, team_id: str, daily: pd.DataFrame) -
     expected = {t: int(s) for t, s in before["holdings"].items() if int(s) > 0}
     exp_cash = float(before["cash"])
     unpriced = []
+    amounts = []
     for o in plan["orders"]:
         t, n = o["ticker"], o["shares"]
         px = day["avg_price"].get(t)
@@ -103,8 +104,10 @@ def check(ledger_path: Path, out_dir: Path, team_id: str, daily: pd.DataFrame) -
             unpriced.append(t)
             continue
         amt = n * float(px)
+        amounts.append(amt)
         expected[t] = expected.get(t, 0) + (n if o["side"] == "BUY" else -n)
-        exp_cash += -(amt + trade_fee(amt)) if o["side"] == "BUY" else amt - trade_fee(amt) - trade_tax(amt)
+        exp_cash += -amt if o["side"] == "BUY" else amt - trade_tax(amt)
+    exp_cash -= daily_trade_fee(amounts)
     expected = {t: s for t, s in expected.items() if s > 0}
 
     diffs = []

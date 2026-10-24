@@ -40,6 +40,8 @@ def capture_sources(real_data: bool) -> tuple[dict[str, bytes], dict[Path, str]]
     if real_data:
         files += [ROOT / p for p in ('data/market/daily.csv', 'data/market/twse_exright.csv',
                                     'data/history/fundamental/fund_history.csv')]
+        files += [ROOT / p for p in ('data/market/twse_market_cap_top20.csv',
+                                    'data/market/twse_market_cap_top20_manifest.json')]
         files += sorted((ROOT / 'data/etf').glob('active_etf_holdings_*.csv'))
     contents = {p: p.read_bytes() for p in files if p.is_file()}
     buffer = BytesIO()
@@ -65,10 +67,13 @@ def check_unchanged(hashes: dict[Path, str]) -> None:
 def capture_day(day, fills, closes, previous_closes) -> dict:
     frames = {k: getattr(day, k).to_json(orient='split', double_precision=15, force_ascii=False)
               for k in ('master', 'pv', 'fund')}
+    market_cap_score = (None if day.market_cap_score is None else
+                        {str(k): float(v) for k, v in day.market_cap_score.items()})
     for key in ('news', 'research_ranking'):
         if getattr(day, key, None) is not None:
             frames[key] = getattr(day, key).to_json(orient='split', double_precision=15, force_ascii=False)
     return {'trade_date': day.trade_date, 'data_date': day.data_date, 'frames': frames,
+            'market_cap_score': market_cap_score,
             'benches': {k: v.to_dict() for k, v in day.benches.items()},
             'close': day.close.to_dict(), 'tradable': sorted(day.tradable),
             'etf_date': day.etf_date, 'etf_dates': day.etf_dates, 'notes': list(day.notes),
@@ -120,6 +125,8 @@ class ArchivedInputs:
         news = frames.pop('news', None)
         return DayInputs(trade_date=r['trade_date'], data_date=r['data_date'], **frames,
                          news=news, news_items={}, benches={k: pd.Series(v) for k, v in r['benches'].items()},
+                         market_cap_score=(None if r.get('market_cap_score') is None else
+                                           pd.Series(r['market_cap_score'], dtype='float64')),
                          etf_date=r['etf_date'], close=pd.Series(r['close']), tradable=set(r['tradable']),
                          market_sources={k: SourceSpec(**v) for k, v in r['market_sources'].items()},
                          fund_sources={k: SourceSpec(**v) for k, v in r['fund_sources'].items()},

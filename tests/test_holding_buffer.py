@@ -21,7 +21,8 @@ def test_production_retains_through_rank_50(mock_inputs):
 
 
 def test_production_weights_match_requested_variant():
-    assert strategy.SCORE_WEIGHTS == {'pv_score': 0.40, 'fund_score': 0.50, 'news_score': 0.10}
+    assert strategy.SCORE_WEIGHTS == {'pv_score': 0.35, 'fund_score': 0.45, 'news_score': 0.10,
+                                      'market_cap_score': 0.10}
     assert strategy.FUND_SCORE_WEIGHTS == {'B1_rank': 0.50, 'B3_rank': 0.50}
     assert strategy.NO_TRADE_BAND == 0.03
     factors = pd.DataFrame({'B1_rank': [1.0, 0.0], 'B3_rank': [0.0, 1.0],

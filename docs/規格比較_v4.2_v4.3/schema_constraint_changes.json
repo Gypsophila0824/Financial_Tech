@@ -1,0 +1,41 @@
+[
+  {
+    "path": "/$defs/decision/properties/inference_refs/maxItems",
+    "kind": "changed",
+    "old": 5,
+    "new": 8
+  },
+  {
+    "path": "/$defs/observation/properties/source_ref/maxItems",
+    "kind": "changed",
+    "old": 5,
+    "new": 10
+  },
+  {
+    "path": "/properties/decisions/maxItems",
+    "kind": "changed",
+    "old": 30,
+    "new": 60
+  },
+  {
+    "path": "/properties/orders/maxItems",
+    "kind": "changed",
+    "old": 30,
+    "new": 60
+  },
+  {
+    "path": "/properties/schema_version/const",
+    "kind": "removed",
+    "old": "4.2"
+  },
+  {
+    "path": "/properties/schema_version/pattern",
+    "kind": "added",
+    "new": "^4\\.\\d+$"
+  },
+  {
+    "path": "/properties/schema_version/type",
+    "kind": "added",
+    "new": "string"
+  }
+]

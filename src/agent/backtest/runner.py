@@ -21,7 +21,7 @@ from .. import rules
 from ..factor_engine import build_targets, check_active_share, plan_trades
 from ..governance import production_manifest
 from ..inputs import StoreInputs
-from ..state import PortfolioState, settle, trade_fee, trade_tax
+from ..state import PortfolioState, settle, allocate_daily_fees, trade_tax
 from ..tools.trading_calendar import trading_days
 from ..metrics import gross_turnover
 from ..validation_outputs import VALIDATION_ROOT, dated_run_name, update_index
@@ -191,6 +191,7 @@ def run_formal_backtest(
             targets = strategy_adapter(day, state)
         else:
             targets = build_targets(day.master, day.pv, day.fund, day.news, state.held_tickers(), day.benches,
+                                    market_cap_score=day.market_cap_score,
                                     enforce_active_share=enforce_active_share)
         trade_plan = plan_trades(
             targets.picks, state.holdings, pd_to_decimal(state.cash), pd_to_decimal(state.nav),
@@ -218,16 +219,21 @@ def run_formal_backtest(
             ticker, shares, side = decision["ticker"], decision["shares"], decision["side"]
             price = float(fill_prices[ticker])
             amount = shares * price
-            fee = trade_fee(amount)
             tax = trade_tax(amount) if side == "SELL" else 0.0
             buy += amount if side == "BUY" else 0.0
             sell += amount if side == "SELL" else 0.0
-            cost += fee + tax
+            cost += tax
             pending_trade_rows.append({
                 "date": trade_date, "ticker": ticker, "action": decision["action"], "side": side,
-                "shares": shares, "fill_price": price, "amount": amount, "fee": fee, "tax": tax,
+                "shares": shares, "fill_price": price, "amount": amount, "tax": tax,
                 "target_weight": decision["target_weight"], "data_date": day.data_date,
             })
+
+        # fee 欄為當日彙總費用的報表分攤，非逐筆收費。
+        fees = allocate_daily_fees(row['amount'] for row in pending_trade_rows)
+        for row, fee in zip(pending_trade_rows, fees):
+            row['fee'] = fee
+        cost += sum(fees)
 
         orders = [
             type("Order", (), {"ticker": d["ticker"], "side": d["side"], "shares": d["shares"]})()
@@ -355,6 +361,10 @@ def run_formal_backtest(
     active_share_detail = pd.DataFrame(active_share_rows)
     strategy_manifest = strategy_adapter.manifest() if strategy_adapter else production_manifest()
     summary.update({'strategy_manifest': strategy_manifest,
+                    'fee_basis': 'daily_gross_buy_plus_sell_not_net',
+                    'fee_rounding': 'floor_to_twd_unconfirmed',
+                    'fee_allocation': 'cumulative_difference_for_reporting_only',
+                    'tax_basis': 'per_sell_order_floor_to_twd_unconfirmed',
                     'turnover_definition': 'gross_two_sided_notional_over_prior_nav_including_cash_excluding_fees',
                     'news_policy': ('time_contract_checked_not_source_certified' if hasattr(news_loader, 'sha256') else 'injected_loader_unverified') if news_loader else ('archived_snapshot' if any('news' in d['frames'] for d in archived_days) else 'neutral_ablation_not_full_live_strategy'),
                     'submission_validation': 'not_full_dplan_validation',
@@ -459,6 +469,7 @@ def write_result(result: BacktestResult, out_dir: Path, *, config: dict) -> None
         "# 正式策略回測報告", "",
         "本報告重用正式策略引擎；不產生 D-Plan。只允許開始前缺檔暖機，回測途中缺資料即停止。", "",
         "股利明細完整性未經系統認證；未指定 terminal_date 時權益不納入 NAV。分割等未支持事件遇曝險時停止。", "",
+        "手續費依當日買賣成交總額統一計算；trades.csv 的 fee 為日總費用分攤。費用捨去至元與證交稅逐筆計算仍待官方確認。", "",
         f"- 交易日：{s.get('start_date', '—')} 至 {s.get('end_date', '—')}（{s['records']} 日）",
         f"- 累積報酬：{s.get('cumulative_return', 0):.2%}",
     ]

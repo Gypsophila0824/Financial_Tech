@@ -23,12 +23,12 @@ from jsonschema import Draft202012Validator
 from . import rules, strategy
 from .active_share_risk import matches_current_rule, previous_session, validate_benchmarks
 from .models import DecisionDraft
-from .state import PortfolioState, trade_fee, trade_tax
+from .state import PortfolioState, daily_trade_fee, trade_tax
 from .tools.order_generation import derive_orders
 from .tools.universe import Security
 
 ROOT = Path(__file__).resolve().parents[2]
-SCHEMA_PATH = ROOT / "比賽文件" / "D-Plan.schema_v4.2.json"
+SCHEMA_PATH = ROOT / rules.SCHEMA_RELATIVE_PATH
 
 
 @dataclass
@@ -74,16 +74,19 @@ def estimate_post_trade(holdings: dict[str, int], cash: float, orders: list[dict
     """以 T-1 收盤價估算委託後部位（與 server C12 口徑相同）。回傳 (持股, 現金, 淨值, 買進金額, 賣出金額)。"""
     post = dict(holdings)
     buy_amt = sell_amt = 0.0
+    amounts = []
     for o in orders:
         amt = o["shares"] * prices[o["ticker"]]
+        amounts.append(amt)
         if o["side"] == "BUY":
-            cash -= amt + trade_fee(amt)
+            cash -= amt
             buy_amt += amt
             post[o["ticker"]] = post.get(o["ticker"], 0) + o["shares"]
         else:
-            cash += amt - trade_fee(amt) - trade_tax(amt)
+            cash += amt - trade_tax(amt)
             sell_amt += amt
             post[o["ticker"]] = post.get(o["ticker"], 0) - o["shares"]
+    cash -= daily_trade_fee(amounts)
     post = {t: s for t, s in post.items() if s > 0}
     nav = sum(s * prices[t] for t, s in post.items()) + cash
     return post, cash, nav, buy_amt, sell_amt
@@ -107,7 +110,7 @@ def run_checks(plan: dict, ctx: ComplianceContext) -> list[Check]:
     # ---------- 結構 ----------
     schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
     errors = sorted(Draft202012Validator(schema).iter_errors(plan), key=lambda e: list(e.path))
-    add("REJECT", "schema v4.2", not errors,
+    add("REJECT", f"schema v{rules.SCHEMA_VERSION}", not errors,
         "通過" if not errors else "; ".join(f"{list(e.path)}: {e.message}" for e in errors[:5]))
 
     for layer, limit in rules.LAYER_LIMITS.items():

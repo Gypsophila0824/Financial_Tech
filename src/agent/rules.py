@@ -1,6 +1,6 @@
 """官方規則常數。
 
-只放比賽辦法、更新公告與 D-Plan schema v4.2 明文規定的數字，註解附依據。
+只放比賽辦法、更新公告與 D-Plan schema v4.3 明文規定的數字，註解附依據。
 修改前必須先對照簡章原文；策略自己選的參數請放 strategy.py。
 """
 
@@ -28,16 +28,17 @@ PASSIVE_OVERWEIGHT_GRACE_DAYS = 5    # 六(十四) 註3：價格波動超限，5
 SUBMIT_WINDOW_OPEN = time(19, 30)
 SUBMIT_WINDOW_CLOSE = time(8, 55)
 
-# D-Plan schema v4.2
-SCHEMA_VERSION = "4.2"
+# 官方 D-Plan schema v4.3（2026-10-22 自官方公開附件下載）
+SCHEMA_VERSION = "4.3"
+SCHEMA_RELATIVE_PATH = "比賽文件/官方更新_v4.3_2026-10-22/D-Plan.schema_v4.3.json"
 HOLD_NET_FLOW_TOLERANCE = 0.02       # C12：hold 時 |買−賣| ≤ 2% 淨值（server 預設容差）
 LAYER_LIMITS = {
     "sources": 50,
     "observations": 100,
     "inferences": 60,
-    "decisions": 30,
+    "decisions": 60,
     "no_trade_decisions": 30,
-    "orders": 30,
+    "orders": 60,
 }
 
 

@@ -98,7 +98,7 @@ def test_workflow_end_to_end_gate(monkeypatch, tmp_path, formal_code, expected):
     calls = []
     class Inputs:
         def __init__(self, **kwargs):
-            pass
+            self.master = SimpleNamespace(index=pd.Index(['2330']))
         def prev_trading_day(self, day):
             return '2026-10-20'
         def dates(self):
@@ -107,7 +107,9 @@ def test_workflow_end_to_end_gate(monkeypatch, tmp_path, formal_code, expected):
             return object()
     monkeypatch.setattr(workflow, 'StoreInputs', Inputs)
     monkeypatch.setattr(workflow, 'ensure_etfs', lambda *a: {'same_day': True})
-    monkeypatch.setattr(workflow, 'freeze_sources', lambda *a: {})
+    monkeypatch.setattr(workflow.market_cap_top20, 'score_for_date',
+                        lambda *a, **k: calls.append('market_cap') or (pd.Series(dtype=float), '2026-10-20'))
+    monkeypatch.setattr(workflow, 'freeze_sources', lambda *a: calls.append('freeze') or {})
     monkeypatch.setattr(workflow, 'verify_sources', lambda *a: calls.append('verify'))
     monkeypatch.setattr(workflow, 'run_day', lambda *a, **k: SimpleNamespace(checks=[]))
     monkeypatch.setattr(workflow, 'summarize', lambda *a: (True, 'passed'))
@@ -131,4 +133,4 @@ def test_workflow_end_to_end_gate(monkeypatch, tmp_path, formal_code, expected):
     report = {}
     assert workflow.execute(args, tmp_path, report) == formal_code
     assert report['status'] == expected
-    assert calls == ['backtest', 'verify', 'formal']
+    assert calls == ['market_cap', 'freeze', 'backtest', 'verify', 'formal']

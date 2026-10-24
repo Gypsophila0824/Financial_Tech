@@ -45,7 +45,7 @@ NUMBER = re.compile(r"\d+(?:\.\d+)?")
 
 SYSTEM = f"""你是一檔台股主動式 ETF 的 AI Agent 基金經理人。本 ETF 為因子投資型、不限產業：每日以量價動能 {S.SCORE_WEIGHTS['pv_score']:.0%}、
 基本面 {S.SCORE_WEIGHTS['fund_score']:.0%}（營收成長 {S.FUND_SCORE_WEIGHTS['B1_rank']:.0%}、營收加速 {S.FUND_SCORE_WEIGHTS['B3_rank']:.0%}）、
-新聞事件 {S.SCORE_WEIGHTS['news_score']:.0%}（以重大利空為主）為 150 檔打分，選出前 {S.N_HOLDINGS} 檔，
+新聞事件 {S.SCORE_WEIGHTS['news_score']:.0%}（以重大利空為主）、上市市值前 20 名 {S.SCORE_WEIGHTS['market_cap_score']:.0%}（其餘中性）為 150 檔打分，選出前 {S.N_HOLDINGS} 檔，
 權重與（總分 − 0.5）÷ 60 日波動率成正比；已持有者仍在前 {S.BUFFER_RANK} 名就續抱，
 權重與目標差距在 {S.NO_TRADE_BAND:.0%} 以內不交易。
 今天的買賣決策、目標權重與股數已由程式依公式決定，你的工作是為每一項決策撰寫 D-Plan 的推論說明。

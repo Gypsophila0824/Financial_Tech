@@ -14,6 +14,7 @@ from types import SimpleNamespace
 from . import live
 from .compliance import submit_window, summarize
 from .datafeed import etf_holdings
+from .datafeed import market_cap_top20
 from .inputs import StoreInputs
 from .reasoner import TemplateReasoner
 from .run_daily import run_day
@@ -133,6 +134,9 @@ def execute(args, out, report):
     report['etfs'] = ensure_etfs(inputs, data_date)
     if inputs.prev_trading_day(T) != data_date:
         raise ValueError('行情未涵蓋前一交易日')
+    # Fetch and archive the point-in-time cap snapshot before freezing sources;
+    # rehearsal and backtest then consume the same immutable input set.
+    market_cap_top20.score_for_date(data_date, inputs.master.index, history=False)
     state = PortfolioState.load(live.LEDGER)
     if state.holdings and state.as_of != data_date:
         raise ValueError('正式帳本尚未完成前一交易日結算與對帳')

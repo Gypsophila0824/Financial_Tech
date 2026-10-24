@@ -54,6 +54,8 @@ def seal(spec: dict, path: Path):
     payload = {'spec': spec, 'files': {str(p.resolve()): digest(p) for p in files if p.is_file()},
                'execution': {'capital': rules.INITIAL_CAPITAL, 'fee': rules.FEE_RATE,
                              'tax': rules.TAX_RATE, 'rounding': 'floor_unconfirmed',
+                             'fee_basis': 'daily_gross_buy_plus_sell_not_net',
+                             'tax_basis': 'per_sell_order_unconfirmed',
                              'fill': 'daily_average', 'valuation': 'daily_close',
                              'turnover': 'gross_two_sided_over_prior_nav',
                              'baseline': 'available_equal_weight_price_only_not_total_return'},

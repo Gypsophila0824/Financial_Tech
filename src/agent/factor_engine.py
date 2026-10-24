@@ -18,9 +18,7 @@ import pandas as pd
 
 from . import rules, strategy as S
 from .news_policy import news_veto
-
-FEE, TAX = Decimal(str(rules.FEE_RATE)), Decimal(str(rules.TAX_RATE))
-
+from .state import trade_fee, trade_tax
 
 # ---------------------------------------------------------------- Active Share
 def etf_top_holdings(holdings: pd.DataFrame) -> dict[str, pd.Series]:
@@ -90,6 +88,7 @@ class Targets:
 def build_targets(master: pd.DataFrame, pv: pd.DataFrame, fund: pd.DataFrame, news: pd.DataFrame | None,
                   held: list[str], benches: dict[str, pd.Series], *,
                   score_weights: dict[str, float] | None = None,
+                  market_cap_score: pd.Series | None = None,
                   buffer_rank: int | None = None,
                   enforce_active_share: bool = True) -> Targets:
     if any(not f.index.is_unique for f in (master, pv, fund)) or (news is not None and not news.index.is_unique):
@@ -102,15 +101,18 @@ def build_targets(master: pd.DataFrame, pv: pd.DataFrame, fund: pd.DataFrame, ne
             raise ValueError('新聞分數超出 0–1')
     df = master[["name", "market", "industry"]].copy()
     df = df.join(pv[["pv_score", "vol60", "A3"]]).join(fund[["fund_score"]])
+    df["market_cap_score"] = (market_cap_score.reindex(df.index) if market_cap_score is not None
+                              else S.NEUTRAL_SCORE)
     if news is not None and len(news):
         df = df.join(news[["news_score", "worst_event"]])
     else:
         df["news_score"], df["worst_event"] = S.NEUTRAL_SCORE, ""
     weights = S.SCORE_WEIGHTS if score_weights is None else score_weights
-    if (set(weights) != {"pv_score", "fund_score", "news_score"}
+    supported = {"pv_score", "fund_score", "news_score"}
+    if (set(weights) not in (supported, supported | {"market_cap_score"})
             or any(not math.isfinite(v) or v < 0 for v in weights.values())
             or abs(sum(weights.values()) - 1.0) > 1e-12):
-        raise ValueError('分數權重必須是量價／基本面／新聞三項且合計 100%')
+        raise ValueError('分數權重必須是量價／基本面／新聞（可加上市值）且合計 100%')
     cols = list(weights)
     df[cols] = df[cols].fillna(S.NEUTRAL_SCORE)
     df["worst_event"] = df["worst_event"].fillna("")
@@ -198,7 +200,11 @@ def estimate_cash(cash: Decimal, decisions: list[dict]) -> tuple[Decimal, Decima
     """以 T-1 收盤價估算委託後的（買進金額, 賣出金額, 現金）；含手續費與證交稅"""
     buy = sum((Decimal(str(d["price"])) * d["shares"] for d in decisions if d["side"] == "BUY"), Decimal(0))
     sell = sum((Decimal(str(d["price"])) * d["shares"] for d in decisions if d["side"] == "SELL"), Decimal(0))
-    return buy, sell, cash - buy * (1 + FEE) + sell * (1 - FEE - TAX)
+    fee = Decimal(trade_fee(buy + sell))
+    # 本次公告只確認手續費彙總；證交稅暫保留既有逐筆捨去假設。
+    tax = sum((Decimal(trade_tax(float(Decimal(str(d["price"])) * d["shares"])))
+               for d in decisions if d["side"] == "SELL"), Decimal(0))
+    return buy, sell, cash - buy + sell - fee - tax
 
 
 def cash_floor(buy: Decimal, sell: Decimal, nav: Decimal) -> Decimal:

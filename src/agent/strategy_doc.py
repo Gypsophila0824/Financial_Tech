@@ -74,7 +74,10 @@ def strategy_facts() -> dict:
         "選股方式": (f"每個交易日為 150 檔打分：量價動能 {w['pv_score']}（近 20 日報酬、跳過最近 5 日的 60 日報酬、"
                  f"收盤價相對 60 日均價、近 10 日三大法人買賣超）、基本面 {w['fund_score']}（營收成長與營收加速各占"
                  f"{strategy.FUND_SCORE_WEIGHTS['B1_rank']:.0%}，僅使用已公布資料）、新聞事件 {w['news_score']}"
-                 f"（AI 判讀近 {strategy.NEWS_DAYS} 日以該公司為主角的新聞與重大訊息，以重大利空為主）；"
+                 f"（AI 判讀近 {strategy.NEWS_DAYS} 日以該公司為主角的新聞與重大訊息，以重大利空為主）、"
+                 f"上市市值前20名 {w['market_cap_score']}（第1名2.00、第2名1.50、第3名1.00、第4至5名0.80、"
+                 f"第6至10名0.65、第11至20名0.55，其餘標的中性0.50；"
+                 f"採證交所市值排行，排除不在競賽清單內的代號）；"
                  f"取總分前 {strategy.N_HOLDINGS} 名"),
         "持股與權重": (f"持有約 {strategy.N_HOLDINGS} 檔（規則 {rules.MIN_HOLDINGS}～{rules.MAX_HOLDINGS} 檔），"
                   f"權重與（總分 − 0.5）÷ 60 日波動率成正比，總分越高、波動越低者權重越高；"

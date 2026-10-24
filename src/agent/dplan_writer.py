@@ -1,4 +1,4 @@
-"""D-Plan Writer：把各層草稿組成 schema v4.2 的 D-Plan JSON。
+"""D-Plan Writer：把各層草稿組成 schema v4.3 的 D-Plan JSON。
 
 只收錄實際被引用的事實與來源，並依引用順序統一編號
 （S/O/I/D 從 1 開始、連續、不跳號、不加前導零），文字中的 [[key]] 換成正式編號。

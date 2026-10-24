@@ -100,6 +100,8 @@ def build_evidence(day: DayInputs, tickers: list[str]) -> tuple[Evidence, dict[s
     def market_refs(market: str) -> list[str]:
         side = "twse" if market == "TWSE" else "tpex"
         refs = [ms[f"quotes_{side}"].key, ms[f"insti_{side}"].key]
+        if "market_cap_twse" in ms:
+            refs.append(ms["market_cap_twse"].key)
         if "history" in fs:
             return refs + [fs["history"].key]
         return refs + [fs[f"{side}_revenue"].key, fs[f"{side}_margin"].key]
@@ -139,6 +141,13 @@ def build_evidence(day: DayInputs, tickers: list[str]) -> tuple[Evidence, dict[s
                             ev.add_source(Source(spec.key, spec.authority, spec.url, spec.content_as_of, name=spec.name))
                         stmt.append(spec.key)
                 refs = refs[:3] + stmt
+        cap_score = day.market_cap_score.get(t, S.NEUTRAL_SCORE) if day.market_cap_score is not None else S.NEUTRAL_SCORE
+        values["market_cap_top20_score"] = round(float(cap_score), 4)
+        if "market_cap_twse" in ms and cap_score > S.NEUTRAL_SCORE:
+            cap_label = "上市市值前20名估算加權分數" if "估算" in ms["market_cap_twse"].name else "上市市值前20名加權分數"
+            parts.append(f"{cap_label} {cap_score:.2f}")
+        elif "market_cap_twse" not in ms:
+            parts.append("無同日上市市值前20快照，市值分數採中性")
         values["close"] = float(day.close[t])
         obs_of[t] = ev.add_observation(Observation(
             key=f"obs:stk:{t}", source_keys=refs, topic="stock_factors",
@@ -216,7 +225,8 @@ def run_day(
         raise RuntimeError(f"帳本結算日 {state.as_of} ≠ 資料基準日 {day.data_date}，請先依後台庫存明細更新帳本")
 
     # ---- 評分、選股、配權重、決策（factor_engine）----
-    targets = build_targets(day.master, day.pv, day.fund, day.news, list(holdings), day.benches)
+    targets = build_targets(day.master, day.pv, day.fund, day.news, list(holdings), day.benches,
+                            market_cap_score=day.market_cap_score)
     nav, cash = Decimal(str(state.nav)), Decimal(str(state.cash))
     tp = plan_trades(targets.picks, holdings, cash, nav, day.close, day.tradable, day.benches, day.data_date)
 

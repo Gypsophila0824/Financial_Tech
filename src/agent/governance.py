@@ -30,6 +30,12 @@ def production_manifest() -> dict:
                 "A3: 相對60日均價",
                 "A4: 近10日法人買賣超金額／20日平均成交金額",
             ],
+            "market_cap_factor": {
+                "source": "TWSE listed-company market-cap top-20 ranking API",
+                "source_url": "https://www.twse.com.tw/rwd/zh/homeApi/ranking",
+                "universe_filter": "Only symbols in the competition's 150-stock universe",
+                "score": "rank 1=2.0, rank 2=1.5, rank 3=1.0; ranks 4-20 retain the former linear schedule (rank 20=0.55); other eligible names=0.5; same-date snapshot only",
+            },
             "selection": {
                 "target_holdings": strategy.N_HOLDINGS,
                 "holding_buffer_rank": strategy.BUFFER_RANK,

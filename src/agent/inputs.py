@@ -21,7 +21,7 @@ from pathlib import Path
 import pandas as pd
 
 from . import rules
-from .datafeed import fund_factors, pv_factors
+from .datafeed import fund_factors, pv_factors, market_cap_top20
 from .datafeed.etf_holdings import ETFS
 from .datafeed.market import FALLBACK_INSTI_SOURCES, FALLBACK_QUOTE_SOURCES
 from .datafeed.tpex_prices import DAILY_URL as TPEX_QUOTES, PRICE_SCOPE
@@ -86,6 +86,7 @@ class DayInputs:
     notes: list[str] = field(default_factory=list)
     etf_dates: dict[str, str] = field(default_factory=dict)
     research_ranking: pd.DataFrame | None = None  # optional strategy feature snapshot, never a live override
+    market_cap_score: pd.Series | None = None     # point-in-time TWSE listed top-20 score
 
 
 def _market_sources(daily_day: pd.DataFrame, data_date: str) -> dict[str, SourceSpec]:
@@ -278,9 +279,24 @@ class StoreInputs:
         known = daily[daily["close"].notna()].sort_values("date")
         close = known.groupby("ticker")["close"].last()
         tradable = set(known.loc[known["date"] == data_date, "ticker"])
+        cap_score, cap_date = market_cap_top20.score_for_date(data_date, self.master.index, history=self.history)
+        market_sources = _market_sources(daily[daily["date"] == data_date], data_date)
+        if cap_date:
+            cap_metadata = market_cap_top20.snapshot_metadata_for_date(data_date)
+            estimated_cap = bool(cap_metadata.get("estimated"))
+            cap_url = market_cap_top20.SHARES_URL if estimated_cap else market_cap_top20.URL
+            cap_name = ("歷史上市公司市值前20估算（收盤價×流通發行股數）"
+                        if estimated_cap else "證交所上市公司市值排行前二十名")
+            market_sources["market_cap_twse"] = SourceSpec(
+                "src:market_cap_twse", "twse", cap_url, cap_name,
+                f"{cap_metadata.get('shares_source_date', cap_date)}T23:59:00+08:00")
+            if estimated_cap:
+                notes.append(f"{data_date} 市值前20採估算：當日收盤價×發行股數（扣除私募股數）；"
+                             f"股數來源日期 {cap_metadata.get('shares_source_date', '未記錄')}，估算快照不等同官方排行")
+        else:
+            notes.append(f"{data_date} 無同日證交所上市市值前20快照，市值分數採中性值 0.5（不回填其他日期排名）")
         return DayInputs(trade_date, data_date, self.master, pv.round(4), fund, None, {}, benches, etf_date, close,
-                         tradable, _market_sources(daily[daily["date"] == data_date], data_date), fsrc, stmt, notes,
-                         self.etf_dates)
+                         tradable, market_sources, fsrc, stmt, notes, self.etf_dates, market_cap_score=cap_score)
 
 
 class MockInputs:
@@ -350,4 +366,5 @@ class MockInputs:
                                 ("insti_tpex", "tpex"))}
         fsrc = {"history": SourceSpec("src:fund_mock", "mops", "https://mock.invalid/mops", "【模擬】基本面", ts)}
         return DayInputs(trade_date, data_date, self.master, pv.round(4), self.fund, None, {}, self.benches,
-                         data_date, close, set(close.index), msrc, fsrc)
+                         data_date, close, set(close.index), msrc, fsrc,
+                         market_cap_score=pd.Series(0.5, index=self.master.index, name="market_cap_score"))

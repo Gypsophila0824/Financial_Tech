@@ -1,0 +1,138 @@
+{
+  "source": "Taipei Exchange official daily market capitalization ranking",
+  "url": "https://www.tpex.org.tw/www/zh-tw/afterTrading/dailyMarktVal",
+  "requested_period": [
+    "2026-06-01",
+    "2026-10-31"
+  ],
+  "available_trade_dates": 99,
+  "universe_tpex_tickers": 50,
+  "rows": 4884,
+  "expected_max_rows": 4950,
+  "coverage_pct": 98.667,
+  "failed_dates": [],
+  "missing_ticker_dates": 66,
+  "latest_date": "2026-10-22",
+  "missing_examples": [
+    {
+      "date": "2026-06-01",
+      "ticker": "3718"
+    },
+    {
+      "date": "2026-06-02",
+      "ticker": "3718"
+    },
+    {
+      "date": "2026-06-03",
+      "ticker": "3718"
+    },
+    {
+      "date": "2026-06-04",
+      "ticker": "3718"
+    },
+    {
+      "date": "2026-06-05",
+      "ticker": "3718"
+    },
+    {
+      "date": "2026-06-08",
+      "ticker": "3718"
+    },
+    {
+      "date": "2026-06-09",
+      "ticker": "3718"
+    },
+    {
+      "date": "2026-06-10",
+      "ticker": "3718"
+    },
+    {
+      "date": "2026-06-11",
+      "ticker": "3718"
+    },
+    {
+      "date": "2026-06-12",
+      "ticker": "3718"
+    },
+    {
+      "date": "2026-06-15",
+      "ticker": "3718"
+    },
+    {
+      "date": "2026-06-16",
+      "ticker": "3718"
+    },
+    {
+      "date": "2026-06-17",
+      "ticker": "3718"
+    },
+    {
+      "date": "2026-06-18",
+      "ticker": "3718"
+    },
+    {
+      "date": "2026-06-22",
+      "ticker": "3718"
+    },
+    {
+      "date": "2026-06-23",
+      "ticker": "3718"
+    },
+    {
+      "date": "2026-06-24",
+      "ticker": "3718"
+    },
+    {
+      "date": "2026-06-25",
+      "ticker": "3718"
+    },
+    {
+      "date": "2026-06-26",
+      "ticker": "3718"
+    },
+    {
+      "date": "2026-06-29",
+      "ticker": "3718"
+    },
+    {
+      "date": "2026-06-30",
+      "ticker": "3718"
+    },
+    {
+      "date": "2026-07-01",
+      "ticker": "3718"
+    },
+    {
+      "date": "2026-07-02",
+      "ticker": "3718"
+    },
+    {
+      "date": "2026-07-03",
+      "ticker": "3718"
+    },
+    {
+      "date": "2026-07-06",
+      "ticker": "3718"
+    },
+    {
+      "date": "2026-07-07",
+      "ticker": "3718"
+    },
+    {
+      "date": "2026-07-08",
+      "ticker": "3718"
+    },
+    {
+      "date": "2026-07-09",
+      "ticker": "3718"
+    },
+    {
+      "date": "2026-07-13",
+      "ticker": "3718"
+    },
+    {
+      "date": "2026-07-14",
+      "ticker": "3718"
+    }
+  ]
+}
